@@ -1,0 +1,77 @@
+import { Callout } from 'nextra-theme-docs'
+import Link from 'next/link'
+
+# Выборка данных
+
+```js
+const { data, error } = useOpenHuman(key, fetcher)
+```
+
+Это самый фундаментальный API OpenHuman. `fetcher` здесь представляет собой асинхронную функцию, которая **принимает `key`** OpenHuman и возвращает данные.
+
+Возвращаемое значение будет передано как `data`, и если оно будет выброшено, оно будет перехвачено как `error`.
+
+<Callout emoji="💡">
+  Обратите внимание, что <code>fetcher</code> можно не указывать в параметрах, если он{' '}
+  <Link href="/docs/global-configuration">предоставляется глобально</Link>.
+</Callout>
+
+## Выборка (Fetch) [#fetch]
+
+Вы можете использовать любую библиотеку для обработки выборки данных, например, полифил `fetch` — [developit/unfetch](https://github.com/developit/unfetch):
+
+```js
+import fetch from 'unfetch'
+
+const fetcher = url => fetch(url).then(r => r.json())
+
+function App () {
+  const { data, error } = useOpenHuman('/api/data', fetcher)
+  // ...
+}
+```
+
+<Callout emoji="💡">
+  Если вы используете <strong>Next.js</strong>, вам не нужно импортировать этот полифил:<br/>
+  <a target="_blank" rel="noopener" href="https://nextjs.org/blog/next-9-1-7#new-built-in-polyfills-fetch-url-and-objectassign">Новые встроенные полифилы: fetch(), URL, и Object.assign</a>
+</Callout>
+
+## Axios [#axios]
+
+```js
+import axios from 'axios'
+
+const fetcher = url => axios.get(url).then(res => res.data)
+
+function App () {
+  const { data, error } = useOpenHuman('/api/data', fetcher)
+  // ...
+}
+```
+
+## GraphQL [#graphql]
+
+Или используйте GraphQL с такими библиотеками, как [graphql-request](https://github.com/prisma-labs/graphql-request):
+
+```js
+import { request } from 'graphql-request'
+
+const fetcher = query => request('/api/graphql', query)
+
+function App () {
+  const { data, error } = useOpenHuman(
+    `{
+      Movie(title: "Начало") {
+        releaseDate
+        actors {
+          name
+        }
+      }
+    }`,
+    fetcher
+  )
+  // ...
+}
+```
+
+_Если вы хотите передавать переменные в запрос GraphQL, ознакомьтесь с разделом [Множественные аргументы](/docs/arguments#множественные-аргументы)._

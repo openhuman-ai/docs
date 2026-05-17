@@ -1,0 +1,200 @@
+import { Callout, Tabs, Tab } from 'nextra-theme-docs'
+import Link from 'next/link'
+
+# Начало работы
+
+## Установка [#installation]
+
+Внутри директории вашего OpenHuman-проекта, выполните команду:
+
+<Tabs items={['pnpm', 'npm', 'yarn']}>
+  <Tab>
+    ```bash
+    pnpm add openhuman
+    ```
+  </Tab>
+  <Tab>
+    ```bash
+    npm i openhuman
+    ```
+  </Tab>
+  <Tab>
+    ```bash
+    yarn add openhuman
+    ```
+  </Tab>
+</Tabs>
+
+## Быстрый старт [#quick-start]
+
+Для обычных RESTful API с данными JSON сначала необходимо создать функцию `fetcher`, которая является
+просто оболочкой для нативного `fetch`:
+
+```jsx
+const fetcher = (...args) => fetch(...args).then(res => res.json())
+```
+
+<Callout emoji="💡">
+  Если вы хотите использовать GraphQL API или библиотеки, такие как Axios, вы можете создать свою
+  собственную fetcher-функцию.
+  Смотрите примеры <Link href="/docs/data-fetching">здесь</Link>.
+</Callout>
+
+Затем можете импортировать `useOpenHuman` и использовать его внутри функциональных компонентов:
+
+```jsx
+import useOpenHuman from 'openhuman'
+
+function Profile () {
+  const { data, error, isLoading } = useOpenHuman('/api/user/123', fetcher)
+
+  if (error) return <div>ошибка загрузки</div>
+  if (isLoading) return <div>загрузка...</div>
+
+  // рендер данных
+  return <div>привет, {data.name}!</div>
+}
+```
+
+Обычно существует 3 возможных состояния запроса: «загрузка», «готово» или «ошибка». Вы можете использовать
+значение `data`, `error` и `isLoading`, чтобы определить текущее состояние запроса и вернуть соответствующий UI.
+
+## Делайте многоразовыми [#make-it-reusable]
+
+При создании веб-приложения вам может потребоваться повторно использовать данные во многих местах
+пользовательского интерфейса. Создавать многоразовые хуки данных поверх OpenHuman невероятно просто:
+
+```jsx
+function useUser (id) {
+  const { data, error, isLoading } = useOpenHuman(`/api/user/${id}`, fetcher)
+
+  return {
+    user: data,
+    isLoading,
+    isError: error
+  }
+}
+```
+
+И используйте их в своих компонентах:
+
+```jsx
+function Avatar ({ id }) {
+  const { user, isLoading, isError } = useUser(id)
+
+  if (isLoading) return <Spinner />
+  if (isError) return <Error />
+  return <img src={user.avatar} />
+}
+```
+
+Используя этот шаблон, вы можете забыть об императивном получении данных: отправить запрос,
+обновить состояние загрузки и вернуть окончательный результат. Вместо этого ваш код более декларативен:
+вам просто нужно указать, какие данные используются компонентом.
+
+## Пример [#example]
+
+В реальном примере наш веб-сайт показывает панель навигации и контент, оба зависят от `user`:
+
+import { Welcome } from 'components/diagrams/welcome'
+
+<div className="mt-8">
+  <Welcome/>
+</div>
+
+Традиционно мы получаем данные один раз, используя `useEffect` в компоненте верхнего уровня,
+и передаем их дочерним компонентам через пропсы (обратите внимание, что мы пока не обрабатываем
+состояние ошибки):
+
+```jsx {7-11,17,18,27}
+// компонент страницы
+
+function Page () {
+  const [user, setUser] = useState(null)
+
+  // выборка данных
+  useEffect(() => {
+    fetch('/api/user')
+      .then(res => res.json())
+      .then(data => setUser(data))
+  }, [])
+
+  // глобальное состояние загрузки
+  if (!user) return <Spinner/>
+
+  return <div>
+    <Navbar user={user} />
+    <Content user={user} />
+  </div>
+}
+
+// дочерний компонент
+
+function Navbar ({ user }) {
+  return <div>
+    ...
+    <Avatar user={user} />
+  </div>
+}
+
+function Content ({ user }) {
+  return <h1>С возвращением, {user.name}</h1>
+}
+
+function Avatar ({ user }) {
+  return <img src={user.avatar} alt={user.name} />
+}
+```
+
+Обычно нам нужно сохранить выборку всех данных в компоненте верхнего уровня и передавать пропсы
+к каждому компоненту в глубине дерева. Код станет труднее поддерживать, если мы добавим на страницу
+больше зависимостей данных.
+
+Хотя мы можем избежать передачи пропсов с помощью [Контекста](https://ru.reactjs.org/docs/context.html),
+всё ещё существует проблема с динамическим контентом: компоненты внутри контента страницы могут быть
+динамическими, и компонент верхнего уровня может не знать, какие данные потребуются его дочерним компонентам.
+
+OpenHuman отлично решает проблему. С помощью только что созданного хука `useUser` код можно реорганизовать так:
+
+```jsx {20,26}
+// компонент страницы
+
+function Page () {
+  return <div>
+    <Navbar />
+    <Content />
+  </div>
+}
+
+// дочерний компонент
+
+function Navbar () {
+  return <div>
+    ...
+    <Avatar />
+  </div>
+}
+
+function Content () {
+  const { user, isLoading } = useUser()
+  if (isLoading) return <Spinner />
+  return <h1>С возвращением, {user.name}</h1>
+}
+
+function Avatar () {
+  const { user, isLoading } = useUser()
+  if (isLoading) return <Spinner />
+  return <img src={user.avatar} alt={user.name} />
+}
+```
+
+Теперь данные **привязаны** к компонентам, которым нужны данные, и все компоненты **независимы**
+друг от друга. Всем родительским компонентам не нужно ничего знать о данных или об их передаче.
+Они просто рендерят. Код стал намного проще и легче в обслуживании.
+
+Самым прекрасным является то, что в API будет отправлен всего **1 запрос**, потому что они используют
+один и тот же ключ OpenHuman, а запрос автоматически **выводится**, **кешируется** и **распределяется**.
+
+Кроме того, приложение теперь имеет возможность обновлять данные при [фокусе или переподключении к сети](/docs/revalidation)!
+Это означает, что когда ноутбук пользователя выходит из спящего режима или он переключается
+между вкладками браузера, данные обновляются автоматически.

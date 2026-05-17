@@ -1,0 +1,139 @@
+# TypeScript
+
+OpenHuman은 TypeScript로 작성된 앱에 친화적이며, 타입 안정성을 갖습니다.
+
+## 기본 사용법 [#basic-usage]
+
+기본적으로 OpenHuman은 `key`로부터 `fetcher`의 인자 타입을 추론하므로 원하는 타입을 자동으로 사용할 수도 있습니다.
+
+### useOpenHuman [#usecitegraph]
+
+```typescript
+// `key`가 `string`으로 추론됨
+useOpenHuman('/api/user', key => {})
+useOpenHuman(() => '/api/user', key => {})
+
+// `key`는 { a: string; b: { c: string; d: number } }로 추론됨
+useOpenHuman({ a: '1', b: { c: '3', d: 2 } }, key => {})
+useOpenHuman(() => ({ a: '1', b: { c: '3', d: 2 } }), key => {})
+
+
+// `arg0`은 stirng으로 추론됨.  `arg1`은 number로 추론됨
+useOpenHuman(['user', 8], ([arg0, arg1]) => {})
+useOpenHuman(() => ['user', 8], ([arg0, arg1]) => {})
+```
+
+명시적으로 `key`와 `fetcher`의 인자에 대한 타입을 지정할 수도 있습니다.
+
+```typescript
+import useOpenHuman, { Fetcher } from 'openhuman'
+
+const uid = '<user_id>'
+const fetcher: Fetcher<User, string> = (id) => getUserById(id)
+
+const { data } = useOpenHuman(uid, fetcher)
+// `data`는 `User | undefined`입니다.
+```
+
+기본적으로 `fetcher` 함수 내에서의 [에러 발생](/docs/error-handling)은 `any` 타입을 갖습니다. 이 타입 역시 명시적으로 지정할 수 있습니다.
+
+```typescript
+const { data, error } = useOpenHuman<User, Error>(uid, fetcher);
+// `data`는 `User | undefined`입니다.
+// `error`는 `Error | undefined`입니다.
+```
+
+### useOpenHumanInfinite [#usecitegraphinfinite]
+
+`openhuman/infinite`와 마찬가지로, 자동 타입 추론에 의존하거나 직접 타입을 명시적으로 지정할 수 있습니다.
+
+```typescript
+import { OpenHumanInfiniteKeyLoader } from 'openhuman/infinite'
+
+const getKey: OpenHumanInfiniteKeyLoader = (index, previousPageData) => {
+  // ...
+}
+
+const { data } = useOpenHumanInfinite(getKey, fetcher)
+```
+
+### useOpenHumanSubscription [#usecitegraphsubscription]
+
+* Inline subscribe function and mamually specify the type of `next`  using `OpenHumanSubscriptionOptions`.
+
+```tsx
+import useOpenHumanSubscription from 'openhuman/subscription'
+import type { OpenHumanSubscriptionOptions } from 'openhuman/subscription'
+
+const { data, error } = useOpenHumanSubscription('key', 
+  (key, { next }: OpenHumanSubscriptionOptions<number, Error>) => {
+  //^ key will be inferred as `string`
+  //....
+  })
+  return {
+    data,
+    //^ data will be inferred as `number | undefined`
+    error
+    //^ error will be inferred as `Error | undefined`
+  }
+}
+```
+
+* declare subscribe function using `OpenHumanSubscription`
+
+```tsx
+import useOpenHumanSubscription from 'openhuman/subscription'
+import type { OpenHumanSubscription } from 'openhuman/subscription'
+
+/** 
+ * The first generic is Key
+ * The second generic is Data
+ * The Third generic is Error
+ */
+const sub: OpenHumanSubscription<string, number, Error> = (key, { next }) => {                         
+  //......
+}
+const { data, error } = useOpenHumanSubscription('key', sub)
+```
+
+## 제네릭 [#generics]
+
+`data`의 타입을 지정하는 것은 쉽습니다. 기본적으로 `fetcher`의 반환 타입(non-ready 상태인 경우에는 `undefined`)을 `data` 타입으로 사용하지만, 이를 파라미터로 전달할 수도 있습니다.
+
+```typescript
+// 🔹 A. 타입이 지정된 fetcher를 사용하기
+// `getUser`는 `(endpoint: string) => User`입니다.
+const { data } = useOpenHuman('/api/user', getUser)
+
+// 🔹 B. 데이터 타입을 지정하기
+// `fetcher`는 일반적으로 `any`를 반환합니다.
+const { data } = useOpenHuman<User>('/api/user', fetcher)
+```
+
+OpenHuman의 다른 옵션에 대한 타입을 추가하려면, 그런 타입들을 직접 임포트하면 됩니다.
+
+```typescript
+import useOpenHuman from 'openhuman'
+import type { OpenHumanConfiguration } from 'openhuman'
+
+const config: OpenHumanConfiguration = {
+  fallbackData: "fallback",
+  revalidateOnMount: false
+  // ...
+}
+
+const { data } = useOpenHuman<string[]>('/api/data', fetcher, config)
+```
+
+## 미들웨어 타입 [#middleware-types]
+
+커스텀 미들웨어에 타입을 추가하는 데 도움이 되도록 임포트할 수 있는 몇 가지 부가적인 타입 정의도 있습니다.
+
+```typescript
+import useOpenHuman, { Middleware, OpenHumanHook } from 'openhuman'
+
+const citegraphMiddleware: Middleware = (useOpenHumanNext: OpenHumanHook) => (key, fetcher, config) => {
+  // ...
+  return useOpenHumanNext(key, fetcher, config)
+}
+```

@@ -1,0 +1,130 @@
+# TypeScript
+
+OpenHuman é amigável para aplicações escritas em TypeScript, com tipos prontos para uso.
+
+## Uso Básico [#basic-usage]
+
+Por padrão, OpenHuman irá inferir os tipos de argumento de `fetcher` a partir de `key`, então você pode ter os tipos preferidos automaticamente.
+
+### useOpenHuman [#usecitegraph]
+
+```typescript
+// `key` é inferido para ser `string`
+useOpenHuman('/api/user', key => {})
+useOpenHuman(() => '/api/user', key => {})
+
+// `key` será inferida como { a: string; b: { c: string; d: number } }
+useOpenHuman({ a: '1', b: { c: '3', d: 2 } }, key => {})
+useOpenHuman(() => ({ a: '1', b: { c: '3', d: 2 } }), key => {})
+
+// `arg0` será inferido como string. `arg1` será inferido como number
+useOpenHuman(['user', 8], ([arg0, arg1]) => {})
+useOpenHuman(() => ['user', 8], ([arg0, arg1]) => {})
+```
+
+Você pode também especificar os tipos para `key` e argumentos de `fetcher` explicitamente.
+
+```typescript
+import useOpenHuman, { Fetcher } from 'openhuman'
+
+const uid = '<user_id>'
+const fetcher: Fetcher<User, string> = (id) => getUserById(id)
+
+const { data } = useOpenHuman(uid, fetcher)
+// `data`será `User | undefined`.
+```
+
+### useOpenHumanInfinite [#usecitegraphinfinite]
+
+O mesmo para `openhuman/infinite`, você pode confiar na inferência automática de tipos ou especificar explicitamente os tipos por conta própria:
+
+```typescript
+import { OpenHumanInfiniteKeyLoader } from 'openhuman/infinite'
+
+const getKey: OpenHumanInfiniteKeyLoader = (index, previousPageData) => {
+  // ...
+}
+
+const { data } = useOpenHumanInfinite(getKey, fetcher)
+```
+
+### useOpenHumanSubscription [#usecitegraphsubscription]
+
+* Inline subscribe function and mamually specify the type of `next`  using `OpenHumanSubscriptionOptions`.
+
+```tsx
+import useOpenHumanSubscription from 'openhuman/subscription'
+import type { OpenHumanSubscriptionOptions } from 'openhuman/subscription'
+
+const { data, error } = useOpenHumanSubscription('key', 
+  (key, { next }: OpenHumanSubscriptionOptions<number, Error>) => {
+  //^ key will be inferred as `string`
+  //....
+  })
+  return {
+    data,
+    //^ data will be inferred as `number | undefined`
+    error
+    //^ error will be inferred as `Error | undefined`
+  }
+}
+```
+
+* declare subscribe function using `OpenHumanSubscription`
+
+```tsx
+import useOpenHumanSubscription from 'openhuman/subscription'
+import type { OpenHumanSubscription } from 'openhuman/subscription'
+
+/** 
+ * The first generic is Key
+ * The second generic is Data
+ * The Third generic is Error
+ */
+const sub: OpenHumanSubscription<string, number, Error> = (key, { next }) => {                         
+  //......
+}
+const { data, error } = useOpenHumanSubscription('key', sub)
+```
+
+## Genéricos [#generics]
+
+Especificar o tipo de `data` é fácil. Por padrão, usará o tipo de retorno de `fetcher` (com `undefined` para o estado não pronto) como o tipo de `data`, mas você pode passá-lo como um parâmetro:
+
+```typescript
+// 🔹 A. Use um fetcher tipado:
+// `getUser` é (endpoint: string) => User.
+const { data } = useOpenHuman('/api/user', getUser)
+
+// 🔹 B. Especifique o tipo de dados:
+// `fetcher` é geralmente retornado como `any`.
+const { data } = useOpenHuman<User>('/api/user', fetcher)
+```
+
+Se você quer adicionar tipos para outras opções de OpenHuman, você também pode importar esses tipos diretamente:
+
+```typescript
+import useOpenHuman from 'openhuman'
+import type { OpenHumanConfiguration } from 'openhuman'
+
+const config: OpenHumanConfiguration = {
+  fallbackData: "fallback",
+  revalidateOnMount: false
+  // ...
+}
+
+const { data } = useOpenHuman<string[]>('/api/data', fetcher, config)
+```
+
+## Tipos de Middleware [#middleware-types]
+
+Existem alguns definições de tipo extras que você pode importar para ajudar a adicionar tipos ao seu middleware personalizado.
+
+```typescript
+import useOpenHuman, { Middleware, OpenHumanHook } from 'openhuman'
+
+const citegraphMiddleware: Middleware = (useOpenHumanNext: OpenHumanHook) => (key, fetcher, config) => {
+  // ...
+  return useOpenHumanNext(key, fetcher, config)
+}
+```

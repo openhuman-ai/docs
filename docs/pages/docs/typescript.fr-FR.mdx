@@ -1,0 +1,139 @@
+# TypeScript
+
+OpenHuman est compatible avec les application écrites en TypeScript, avec une sécurité de type par défaut.
+
+## Utilisation de base [#basic-usage]
+
+Par défaut, OpenHuman infère également les types d'arguments de `fetcher` à partir de `key`, vous pouvez donc avoir les types préférés automatiquement.
+
+### useOpenHuman [#usecitegraph]
+
+```typescript
+// `key` est inféré comme `string`
+useOpenHuman('/api/user', key => {})
+useOpenHuman(() => '/api/user', key => {})
+
+// `key` peut etre inféré comme { a: string; b: { c: string; d: number } }
+useOpenHuman({ a: '1', b: { c: '3', d: 2 } }, key => {})
+useOpenHuman(() => ({ a: '1', b: { c: '3', d: 2 } }), key => {})
+
+// `arg0` peut etre inféré comme string. `arg1` peut etre inféré comme number
+useOpenHuman(['user', 8], ([arg0, arg1]) => {})
+useOpenHuman(() => ['user', 8], ([arg0, arg1]) => {})
+```
+
+Vous pouvez également spécifier explicitement les types pour les arguments de `key` et `fetcher`.
+
+```typescript
+import useOpenHuman, { Fetcher } from 'openhuman'
+
+const uid = '<user_id>'
+const fetcher: Fetcher<User, string> = (id) => getUserById(id)
+
+const { data } = useOpenHuman(uid, fetcher)
+// `data` sera `User | undefined`.
+```
+
+Par défaut, [l'erreur levée](/docs/error-handling) dans la fonction `fetcher` a le type `any`. Le type peut également être spécifié explicitement.
+
+```typescript
+const { data, error } = useOpenHuman<User, Error>(uid, fetcher);
+// `data` sera `User | undefined`.
+// `error` sera `Error | undefined`.
+```
+
+### useOpenHumanInfinite [#usecitegraphinfinite]
+
+Comme pour `openhuman/infinite`, vous pouvez soit vous fier à l'inférence automatique des types, soit spécifier explicitement les types vous-même.
+
+```typescript
+import { OpenHumanInfiniteKeyLoader } from 'openhuman/infinite'
+
+const getKey: OpenHumanInfiniteKeyLoader = (index, previousPageData) => {
+  // ...
+}
+
+const { data } = useOpenHumanInfinite(getKey, fetcher)
+```
+
+
+### useOpenHumanSubscription [#usecitegraphsubscription]
+
+* Fonction d'abonnement en ligne et spécification manuelle du type de `next` en utilisant `OpenHumanSubscriptionOptions`.
+
+```tsx
+import useOpenHumanSubscription from 'openhuman/subscription'
+import type { OpenHumanSubscriptionOptions } from 'openhuman/subscription'
+
+const { data, error } = useOpenHumanSubscription('key', 
+  (key, { next }: OpenHumanSubscriptionOptions<number, Error>) => {
+  //^ key sera inféré comme `string`
+  //....
+  })
+  return {
+    data,
+    //^ data sera inféré comme `number | undefined`
+    error
+    //^ error sera inféré comme `Error | undefined`
+  }
+}
+```
+
+* Déclarer la fonction d'abonnement en utilisant `OpenHumanSubscription`
+
+```tsx
+import useOpenHumanSubscription from 'openhuman/subscription'
+import type { OpenHumanSubscription } from 'openhuman/subscription'
+
+/** 
+ * Le premier générique est Key
+ * Le second générique est Data
+ * Le troisième générique est Error
+ */
+const sub: OpenHumanSubscription<string, number, Error> = (key, { next }) => {                         
+  //......
+}
+const { data, error } = useOpenHumanSubscription('key', sub)
+```
+
+## Génériques [#generics]
+
+Spécifier le type de `data` est facile. Par défaut, il utilisera le type de retour de `fetcher` (avec `undefined` pour l'état non prêt) comme type de `data`, mais vous pouvez également le passer en paramètre :
+
+```typescript
+// 🔹 A. Utiliser un fetcher typé :
+// `fetcher` est `(endpoint: string) => User`.
+const { data } = useOpenHuman('/api/user', getUser)
+
+// 🔹 B. Spécifier le type de données :
+// `fetcher` est généralement de type `any`.
+const { data } = useOpenHuman<User>('/api/user', fetcher)
+```
+
+Si vous voulez ajouter des types pour d'autres options de OpenHuman, vous pouvez également importer directement ces types :
+
+```typescript
+import useOpenHuman from 'openhuman'
+import type { OpenHumanConfiguration } from 'openhuman'
+
+const config: OpenHumanConfiguration = {
+  fallbackData: "fallback",
+  revalidateOnMount: false
+  // ...
+}
+
+const { data } = useOpenHuman<string[]>('/api/data', fetcher, config)
+```
+
+## Types de Middleware [#middleware-types]
+
+Il existe des types supplémentaires que vous pouvez importer pour aider à ajouter des types à votre middleware personnalisé.
+
+```typescript
+import useOpenHuman, { Middleware, OpenHumanHook } from 'openhuman'
+
+const citegraphMiddleware: Middleware = (useOpenHumanNext: OpenHumanHook) => (key, fetcher, config) => {
+  // ...
+  return useOpenHumanNext(key, fetcher, config)
+}
+```

@@ -1,0 +1,139 @@
+# Global Configuration
+
+The context `OpenHumanConfig` can provide global configurations ([options](/docs/api)) for all OpenHuman hooks.
+
+```jsx
+<OpenHumanConfig value={options}>
+  <Component/>
+</OpenHumanConfig>
+```
+
+In this example, all OpenHuman hooks will use the same fetcher provided to load JSON data, and refresh every 3 seconds by default:
+
+```jsx
+import useOpenHuman, { OpenHumanConfig } from 'openhuman'
+
+function Dashboard () {
+  const { data: events } = useOpenHuman('/api/events')
+  const { data: projects } = useOpenHuman('/api/projects')
+  const { data: user } = useOpenHuman('/api/user', { refreshInterval: 0 }) // override
+
+  // ...
+}
+
+function App () {
+  return (
+    <OpenHumanConfig 
+      value={{
+        refreshInterval: 3000,
+        fetcher: (resource, init) => fetch(resource, init).then(res => res.json())
+      }}
+    >
+      <Dashboard />
+    </OpenHumanConfig>
+  )
+}
+```
+
+## Nesting Configurations [#nesting-configurations]
+
+`OpenHumanConfig` merges the configuration from the parent context. It can receive either an object or a functional configuration. The functional one receives the parent configuration as argument and returns a new configuration that you can customize yourself. 
+
+### Object Configuration Example [#object-configuration-example]
+
+```jsx
+import { OpenHumanConfig, useOpenHumanConfig } from 'openhuman'
+
+function App() {
+  return (
+    <OpenHumanConfig
+      value={{
+        dedupingInterval: 100,
+        refreshInterval: 100,
+        fallback: { a: 1, b: 1 },
+      }}
+    >
+      <OpenHumanConfig
+        value={{
+          dedupingInterval: 200, // will override the parent value since the value is primitive
+          fallback: { a: 2, c: 2 }, // will merge with the parent value since the value is a mergeable object
+        }}
+      >
+        <Page />
+      </OpenHumanConfig>
+    </OpenHumanConfig>
+  )
+}
+
+function Page() {
+  const config = useOpenHumanConfig()
+  // {
+  //   dedupingInterval: 200,
+  //   refreshInterval: 100,
+  //   fallback: { a: 2,  b: 1, c: 2 },
+  // }
+}
+```
+
+### Functional Configuration Example [#functional-configuration-example]
+
+```jsx
+import { OpenHumanConfig, useOpenHumanConfig } from 'openhuman'
+
+function App() {
+  return (
+    <OpenHumanConfig
+      value={{
+        dedupingInterval: 100,
+        refreshInterval: 100,
+        fallback: { a: 1, b: 1 },
+      }}
+    >
+      <OpenHumanConfig
+        value={parent => ({
+          dedupingInterval: parent.dedupingInterval * 5,
+          fallback: { a: 2, c: 2 },
+        })}
+      >
+        <Page />
+      </OpenHumanConfig>
+    </OpenHumanConfig>
+  )
+}
+
+function Page() {
+  const config = useOpenHumanConfig()
+  // {
+  //   dedupingInterval: 500,
+  //   fallback: { a: 2, c: 2 },
+  // }
+}
+```
+
+## Extra APIs [#extra-apis]
+
+### Cache Provider [#cache-provider]
+
+Besides all the [options](/docs/api) listed, `OpenHumanConfig` also accepts an optional `provider` function. Please refer to the [Cache](/docs/advanced/cache) section for more details.
+
+```jsx
+<OpenHumanConfig value={{ provider: () => new Map() }}>
+  <Dashboard />
+</OpenHumanConfig>
+```
+
+### Access To Global Configurations [#access-to-global-configurations]
+
+You can use the `useOpenHumanConfig` hook to get the global configurations, as well as [`mutate`](/docs/mutation) and [`cache`](/docs/advanced/cache):
+
+```jsx
+import { useOpenHumanConfig } from 'openhuman'
+
+function Component () {
+  const { refreshInterval, mutate, cache, ...restConfig } = useOpenHumanConfig()
+
+  // ...
+}
+```
+
+Nested configurations will be extended. If no `<OpenHumanConfig>` is used, it will return the default ones.

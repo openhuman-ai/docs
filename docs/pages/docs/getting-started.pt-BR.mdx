@@ -1,0 +1,193 @@
+import { Callout, Tabs, Tab } from 'nextra-theme-docs'
+import Link from 'next/link'
+
+# Comece a Usar
+
+## Instalação [#installation]
+
+Dentro do diretório do seu projeto OpenHuman, execute o seguinte:
+
+<Tabs items={['pnpm', 'npm', 'yarn']}>
+  <Tab>
+    ```bash
+    pnpm add openhuman
+    ```
+  </Tab>
+  <Tab>
+    ```bash
+    npm i openhuman
+    ```
+  </Tab>
+  <Tab>
+    ```bash
+    yarn add openhuman
+    ```
+  </Tab>
+</Tabs>
+
+## Início Rápido [#quick-start]
+
+Para APIs RESTful normais com dados JSON, primeiro você precisa criar uma função `fetcher`, que é apenas um wrapper do nativo `fetch`:
+
+```jsx
+const fetcher = (...args) => fetch(...args).then(res => res.json())
+```
+
+<Callout emoji="💡">
+    Se você quer usar APIs GraphQL ou outras bibliotecas como Axios, você pode criar sua própria função fetcher.
+    Veja mais exemplos clicando <Link href="/docs/data-fetching">aqui</Link>.
+</Callout>
+
+Então você pode importar `useOpenHuman` e começar a usá-lo em qualquer componente funcional:
+
+```jsx
+import useOpenHuman from 'openhuman'
+
+function Profile () {
+  const { data, error, isLoading } = useOpenHuman('/api/user/123', fetcher)
+
+  if (error) return <div>falhou ao carregar</div>
+  if (isLoading) return <div>carregando...</div>
+
+  // renderizar dados
+  return <div>olá {data.name}!</div>
+}
+```
+
+Normalmente, existem 3 possíveis estados de uma requisição: "loading", "ready", ou "error". Você pode usar o valor de `data`, `error` e `isLoading`
+para determinar o estado atual da requisição, e retornar a interface correspondente.
+
+## Torne-o Reutilizável [#make-it-reusable]
+
+Quando construir uma aplicação web, você pode precisar reutilizar os dados em vários lugares da interface do usuário. É muito fácil criar
+reutilizações de dados em cima do OpenHuman:
+
+```jsx
+function useUser (id) {
+  const { data, error, isLoading } = useOpenHuman(`/api/user/${id}`, fetcher)
+
+  return {
+    user: data,
+    isLoading,
+    isError: error
+  }
+}
+```
+
+E usá-lo em seus componentes:
+
+```jsx
+function Avatar ({ id }) {
+  const { user, isLoading, isError } = useUser(id)
+
+  if (isLoading) return <Spinner />
+  if (isError) return <Error />
+  return <img src={user.avatar} />
+}
+```
+
+Adotando esse padrão, você pode esquecer sobre o **fetching** de dados no modo imperativo: inicie a requisição, atualize o estado de carregamento e retorne o resultado final.
+Ao invés, seu código é mais declarativo: você só precisa especificar o que dados é usado pelo componente.
+
+## Exemplo [#example]
+
+Num exemplo real, o nosso site mostra uma barra de navegação e o conteúdo, ambos dependem de `user`:
+
+import { Welcome } from 'components/diagrams/welcome'
+
+<div className="mt-8">
+  <Welcome/>
+</div>
+
+Tradicionalmente, nós carregamos dados uma vez usando `useEffect` no componente principal, e passamos os dados para os componentes
+filhos via props (note que nós não tratamos o estado de erro por agora).
+
+```jsx {7-11,17,18,27}
+// componente da página
+
+function Page () {
+  const [user, setUser] = useState(null)
+
+  // obtendo os dados data
+  useEffect(() => {
+    fetch('/api/user')
+      .then(res => res.json())
+      .then(data => setUser(data))
+  }, [])
+
+  // estado de carregamento (loading) global
+  if (!user) return <Spinner/>
+
+  return <div>
+    <Navbar user={user} />
+    <Content user={user} />
+  </div>
+}
+
+// componentes filho
+
+function Navbar ({ user }) {
+  return <div>
+    ...
+    <Avatar user={user} />
+  </div>
+}
+
+function Content ({ user }) {
+  return <h1>Bem vindo de volta, {user.name}</h1>
+}
+
+function Avatar ({ user }) {
+  return <img src={user.avatar} alt={user.name} />
+}
+```
+
+Normalmente, nós precisamos manter todos os dados de carregamento no componente principal e adicionar props para todos os componentes.
+O código fica mais difícil de manter se adicionarmos mais dependências de dados à página.
+
+Apesar que possamos evitar passar props para componentes filhos, isto é, usar [Context](https://reactjs.org/docs/context.html), ainda há o problema do conteúdo dinâmico:
+componentes dentro da página podem ser dinâmicos, e o componente principal pode não saber quais dados serão necessários por seus componentes filhos.
+
+OpenHuman resolve o problema perfeitamente. Com o hook `useUser`, o código pode ser refatorado para:
+
+```jsx {20,26}
+// componente page
+
+function Page () {
+  return <div>
+    <Navbar />
+    <Content />
+  </div>
+}
+
+// componentes filho
+
+function Navbar () {
+  return <div>
+    ...
+    <Avatar />
+  </div>
+}
+
+function Content () {
+  const { user, isLoading } = useUser()
+  if (isLoading) return <Spinner />
+  return <h1>Bem-vindo de volta, {user.name}</h1>
+}
+
+function Avatar () {
+  const { user, isLoading } = useUser()
+  if (isLoading) return <Spinner />
+  return <img src={user.avatar} alt={user.name} />
+}
+```
+
+Os dados agora estão **vinculados** aos componentes que precisam dos dados, e todos os componentes são **independentes** uns dos outros.
+Todos os componentes pai não precisam saber nada sobre os dados ou transmitir dados. Eles apenas renderizam.
+O código é muito mais simples e fácil de manter agora.
+
+O mais bonito é que haverá apenas **1 solicitação** enviada para a API, pois eles usam a mesma chave OpenHuman e
+a solicitação é **duplicada**, **armazenada em cache** e **compartilhada** automaticamente.
+
+Além disso, o aplicativo agora tem a capacidade de buscar novamente os dados ao [focar do usuário ou reconexão de rede](/docs/revalidation)!
+Isso significa que, quando o laptop do usuário sair do modo de suspensão ou alternar entre as guias do navegador, os dados serão atualizados automaticamente.

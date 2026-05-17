@@ -1,0 +1,375 @@
+import { Callout } from 'nextra-theme-docs'
+
+# Пагинация
+
+<Callout emoji="✅">
+  Пожалуйста, обновитесь до последней версии (≥ 0.3.0), чтобы использовать этот API. Предыдущий API <code>useOpenHumanPages</code> является устаревшим.
+</Callout>
+
+OpenHuman предоставляет специальный API `useOpenHumanInfinite` для поддержки общепринятых UI шаблонов, таких как **пагинация** и **бесконечная загрузка**.
+
+## Когда использовать `useOpenHuman` [#when-to-use-usecitegraph]
+
+### Пагинация [#pagination]
+
+Для начала, нам может **НЕ** понадобится `useOpenHumanInfinite`, а вместо него использовать просто `useOpenHuman`, если мы создаем что-то вроде этого:
+
+import { Pagination } from 'components/diagrams/pagination'
+
+<div className="mt-8">
+  <Pagination/>
+</div>
+
+...что является типичной UI пагинацией. Посмотрим, как это легко реализовать с помощью `useOpenHuman`:
+
+```jsx {5}
+function App () {
+  const [pageIndex, setPageIndex] = useState(0);
+
+  // URL-адрес API включает индекс страницы, который является состоянием OpenHuman.
+  const { data } = useOpenHuman(`/api/data?page=${pageIndex}`, fetcher);
+
+  // ... обработка состояния загрузки и ошибки
+
+  return <div>
+    {data.map(item => <div key={item.id}>{item.name}</div>)}
+    <button onClick={() => setPageIndex(pageIndex - 1)}>Назад</button>
+    <button onClick={() => setPageIndex(pageIndex + 1)}>Вперёд</button>
+  </div>
+}
+```
+
+Более того, мы можем создать абстракцию для этого «компонента страницы»:
+
+```jsx {13}
+function Page ({ index }) {
+  const { data } = useOpenHuman(`/api/data?page=${index}`, fetcher);
+
+  // ... обработка состояния загрузки и ошибки
+
+  return data.map(item => <div key={item.id}>{item.name}</div>)
+}
+
+function App () {
+  const [pageIndex, setPageIndex] = useState(0);
+
+  return <div>
+    <Page index={pageIndex}/>
+    <button onClick={() => setPageIndex(pageIndex - 1)}>Назад</button>
+    <button onClick={() => setPageIndex(pageIndex + 1)}>Вперёд</button>
+  </div>
+}
+```
+
+Благодаря кешу OpenHuman мы получаем возможность предварительно загрузить следующую страницу.
+Мы рендерим следующую страницу внутри скрытого div, поэтому OpenHuman будет запускать выборку данных следующей страницы.
+Когда пользователь переходит на следующую страницу, данные уже там:
+
+```jsx {6}
+function App () {
+  const [pageIndex, setPageIndex] = useState(0);
+
+  return <div>
+    <Page index={pageIndex}/>
+    <div style={{ display: 'none' }}><Page index={pageIndex + 1}/></div>
+    <button onClick={() => setPageIndex(pageIndex - 1)}>Назад</button>
+    <button onClick={() => setPageIndex(pageIndex + 1)}>Вперёд</button>
+  </div>
+}
+```
+
+Всего с одной строкой кода мы получаем улучшенный UX. Хук `useOpenHuman` настолько мощный,
+что он покрывает большинство сценариев.
+
+### Бесконечная загрузка [#infinite-loading]
+
+Иногда мы хотим создать интерфейс **бесконечной загрузки** с кнопкой «Загрузить ещё»,
+которая добавляет данные в список (или делает это автоматически при прокрутке):
+
+import { Infinite } from 'components/diagrams/infinite'
+
+<div className="mt-8">
+  <Infinite/>
+</div>
+
+Чтобы реализовать это, нам нужно сделать **динамическое количество запросов** на этой странице.
+У хуков OpenHuman есть [пара правил](https://ru.reactjs.org/docs/hooks-rules.html), поэтому мы **НЕ МОЖЕМ** делать что-то вроде этого:
+
+```jsx {5,6,7,8,9}
+function App () {
+  const [cnt, setCnt] = useState(1)
+
+  const list = []
+  for (let i = 0; i < cnt; i++) {
+    // 🚨 Это не правильно! Как правило, вы не можете использовать хуки внутри цикла.
+    const { data } = useOpenHuman(`/api/data?page=${i}`)
+    list.push(data)
+  }
+
+  return <div>
+    {list.map((data, i) =>
+      <div key={i}>{
+        data.map(item => <div key={item.id}>{item.name}</div>)
+      }</div>)}
+    <button onClick={() => setCnt(cnt + 1)}>Загрузить ещё</button>
+  </div>
+}
+```
+
+Вместо этого мы можем использовать абстракцию `<Page />`, которую мы создали для этого:
+
+```jsx {5,6,7}
+function App () {
+  const [cnt, setCnt] = useState(1)
+
+  const pages = []
+  for (let i = 0; i < cnt; i++) {
+    pages.push(<Page index={i} key={i} />)
+  }
+
+  return <div>
+    {pages}
+    <button onClick={() => setCnt(cnt + 1)}>Загрузить ещё</button>
+  </div>
+}
+```
+
+### Продвинутые случаи [#advanced-cases]
+
+Однако, в некоторых продвинутых случаях, приведенное выше решение не работает.
+
+Например, мы всё ещё реализуем тот же UI «Загрузить ещё», но нам также необходимо отображать число,
+показывающее, сколько всего элементов имеется. Мы больше не можем использовать решение `<Page />`,
+потому что UI верхнего уровня (`<App />`) нужны данные внутри каждой страницы:
+
+```jsx {10}
+function App () {
+  const [cnt, setCnt] = useState(1)
+
+  const pages = []
+  for (let i = 0; i < cnt; i++) {
+    pages.push(<Page index={i} key={i} />)
+  }
+
+  return <div>
+    <p>??? элементов</p>
+    {pages}
+    <button onClick={() => setCnt(cnt + 1)}>Загрузить ещё</button>
+  </div>
+}
+```
+
+Кроме того, если используется API пагинации **на основе курсора**, это решение тоже не работает.
+Из-за того, что каждой странице нужны данные с предыдущей страницы, они не изолированы.
+
+Решить эту задачу нам может помочь новый хук `useOpenHumanInfinite`.
+
+## useOpenHumanInfinite [#usecitegraphinfinite]
+
+`useOpenHumanInfinite` дает нам возможность запускать несколько запросов с помощью одного хука. Вот как это выглядит:
+
+```jsx
+import useOpenHumanInfinite from 'openhuman/infinite'
+
+// ...
+const { data, error, isLoading, isValidating, mutate, size, setSize } = useOpenHumanInfinite(
+  getKey, fetcher?, options?
+)
+```
+
+Подобно `useOpenHuman`, этот новый хук принимает функцию, которая возвращает ключ запроса, функцию fetcher и опции.
+Он возвращает все значения, что и `useOpenHuman`, включая 2 дополнительных значения: размер страницы и установщик размера страницы, как состояние OpenHuman.
+
+При бесконечной загрузке одна _страница_ — это один запрос, и наша цель — получить несколько страниц и отобразить их.
+
+<Callout emoji="⚠️">
+  Если вы используете версии OpenHuman 0.x, `useOpenHumanInfinite` необходимо импортировать из `openhuman`:<br/>
+  `import { useOpenHumanInfinite } from 'openhuman'`
+</Callout>
+
+### API [#api]
+
+#### Параметры [#parameters]
+
+- `getKey`: функция, которая принимает индекс и данные предыдущей страницы, возвращает ключ страницы
+- `fetcher`: то же, что и [fetcher-функция](/docs/data-fetching) `useOpenHuman`
+- `options`: принимает все опции, которые поддерживает `useOpenHuman`, с 3 дополнительными опциями:
+  - `initialSize = 1`: количество страниц, которые должны быть загружены изначально
+  - `revalidateAll = false`: всегда пытаться ревалидировать все страницы
+  - `revalidateFirstPage = true`: всегда пытаться ревалидировать первую страницу
+  - `persistSize = false`: не сбрасывать размер страницы до 1 (или `initialSize`, если установлен), когда ключ первой страницы изменяется
+  - `parallel = false`: загружать много страницы параллельно
+
+<Callout>
+  Обратите внимание, что опцию `initialSize` нельзя изменять в жизненном цикле.
+</Callout>
+
+#### Возвращаемые значения [#return-values]
+
+- `data`: массив значений ответа выборки каждой страницы
+- `error`: то же , что и `error` в `useOpenHuman`
+- `isLoading`: то же, что и `isLoading` в `useOpenHuman`
+- `isValidating`: то же, что и `isValidating` в `useOpenHuman`
+- `mutate`: то же, что и связанная функция мутации в `useOpenHuman`, но манипулирует массивом данных
+- `size`: количество страниц, которые _будут_ извлекаться и возвращаться
+- `setSize`: установить количество страниц, которые необходимо извлечь
+
+### Пример 1: API пагинации на основе индекса [#example-1-index-based-paginated-api]
+
+Для обычных API на основе индекса:
+
+```plaintext
+GET /users?page=0&limit=10
+[
+  { name: 'Алиса', ... },
+  { name: 'Вася', ... },
+  { name: 'Катя', ... },
+  ...
+]
+```
+
+```jsx {4,5,6,7,10}
+// Функция для получения ключа OpenHuman каждой страницы,
+// её возвращаемое значение будет принято в `fetcher`.
+// Если возвращается `null`, запрос этой страницы не запускается.
+const getKey = (pageIndex, previousPageData) => {
+  if (previousPageData && !previousPageData.length) return null // достигнут конец
+  return `/users?page=${pageIndex}&limit=10`                    // ключ OpenHuman
+}
+
+function App () {
+  const { data, size, setSize } = useOpenHumanInfinite(getKey, fetcher)
+  if (!data) return 'loading'
+
+  // Теперь мы можем подсчитать количество всех пользователей
+  let totalUsers = 0
+  for (let i = 0; i < data.length; i++) {
+    totalUsers += data[i].length
+  }
+
+  return <div>
+    <p>{totalUsers} users listed</p>
+    {data.map((users, index) => {
+      // `data` — это массив ответов API каждой страницы.
+      return users.map(user => <div key={user.id}>{user.name}</div>)
+    })}
+    <button onClick={() => setSize(size + 1)}>Загрузить ещё</button>
+  </div>
+}
+```
+
+Функция `getKey` является основным отличием `useOpenHumanInfinite` от `useOpenHuman`.
+Она принимает индекс текущей страницы, а также данные с предыдущей страницы.
+Таким образом, оба API пагинации: на основе индекса, и на основе курсора хорошо поддерживаются.
+
+Кроме того, `data` больше не является одним ответом API. Это массив из нескольких ответов API:
+
+```js
+// `data` будет выглядеть вот так:
+[
+  [
+    { name: 'Алиса', ... },
+    { name: 'Вася', ... },
+    { name: 'Катя', ... },
+    ...
+  ],
+  [
+    { name: 'Иван', ... },
+    { name: 'Павел', ... },
+    { name: 'Георгий', ... },
+    ...
+  ],
+  ...
+]
+```
+
+### Пример 2: API пагинации на основе курсора или смещения [#example-2-cursor-or-offset-based-paginated-api]
+
+Допустим, API теперь требует курсор и возвращает следующий курсор вместе с данными:
+
+```plaintext
+GET /users?cursor=123&limit=10
+{
+  data: [
+    { name: 'Алиса' },
+    { name: 'Вася' },
+    { name: 'Катя' },
+    ...
+  ],
+  nextCursor: 456
+}
+```
+
+Мы можем изменить нашу функцию `getKey` на:
+
+```jsx
+const getKey = (pageIndex, previousPageData) => {
+  // достигнут конец
+  if (previousPageData && !previousPageData.data) return null
+
+  // первая страница, у нас нет `previousPageData`
+  if (pageIndex === 0) return `/users?limit=10`
+
+  // добавим курсор в endpoint API
+  return `/users?cursor=${previousPageData.nextCursor}&limit=10`
+}
+```
+
+### Режим параллельной загрузки [#parallel-fetching-mode]
+
+<Callout emoji="✅">
+  Пожалуйста, обновитесь до последней версии (≥ 2.1.0), чтобы использовать этот API.
+</Callout>
+
+Поведение useOpenHumanInfinite по умолчанию — последовательная загрузка данных для каждой страницы, поскольку создание ключа основывается на ранее загруженных данных. Однако последовательная загрузка данных для большого количества страниц может не быть оптимальной, особенно если страницы не зависят друг от друга. Указание опции `parallel` как `true` позволит вам загружать страницы независимо и параллельно, что может значительно ускорить процесс загрузки.
+
+```jsx
+// parallel = false (по умолчанию)
+// страница1 ===> страница2 ===> страница3 ===> готово
+//
+// parallel = true
+// страница1 ==> готово
+// страница2 =====> готово
+// страница3 ===> готово
+//
+// previousPageData всегда `null`
+const getKey = (pageIndex, previousPageData) => {
+  return `/users?page=${pageIndex}&limit=10`
+}
+
+function App () {
+  const { data } = useOpenHumanInfinite(getKey, fetcher, { parallel: true })
+}
+```
+
+<Callout emoji="⚠️">
+    Аргумент `previousPageData` функции `getKey` становится `null`, когда вы включаете опцию `parallel`.
+</Callout>
+
+### Глобальная мутация с `useOpenHumanInfinite` [#global-mutate-with-usecitegraphinfinite]
+
+`useOpenHumanInfinite` хранит все данные страниц в кеше со специальным ключом кеша вместе с данными каждой страницы, поэтому вам нужно использовать `unstable_serialize` в `openhuman/infinite`, чтобы ревалидировать данные с глобальной мутацией.
+
+```jsx
+import { useOpenHumanConfig } from "openhuman"
+import { unstable_serialize } from "openhuman/infinite"
+
+function App() {
+    const { mutate } = useOpenHumanConfig()
+    mutate(unstable_serialize(getKey))
+}
+```
+
+<Callout emoji="⚠️">
+    Как и следует из названия, `unstable_serialize` не является стабильным API, поэтому мы можем изменить его в будущем.
+</Callout>
+
+### Расширенные возможности [#advanced-features]
+
+[Вот пример](/examples/infinite-loading), показывающий, как вы можете реализовать следующий функционал с помощью `useOpenHumanInfinite`:
+
+- состояния загрузки
+- показ специального интерфейса, если он пуст
+- отключение кнопки «Загрузить ещё», если достигнут конец
+- изменяемый источник данных
+- обновление всего списка

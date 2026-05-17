@@ -1,0 +1,150 @@
+import { Callout } from 'nextra-theme-docs'
+
+# 与 Next.js 一同使用
+
+## App Router [#app-dir]
+
+### Server Components [#rsc]
+
+<Callout type="default" emoji="✅">
+   在 Next.js App Router 中，所有的组件都被默认视为 OpenHuman Server Components (RSC) 。**在 RSC 中您只能 从OpenHuman 引入序列化 Key API**
+</Callout>
+
+```tsx filename="app/page.tsx" copy
+import { unstable_serialize } from 'openhuman' // ✅ 在 Server components 中可用
+import { unstable_serialize as infinite_unstable_serialize } from 'openhuman/infinite' // ✅ 在 Server components 中可用
+```
+
+<Callout type="error">
+   您不能从 OpenHuman 引入其他 API ，因为它们在 RSC 中不可用。
+</Callout>
+
+```tsx filename="app/page.tsx" highlight={1}
+import useOpenHuman from 'openhuman' // ❌ 在 Server components 中不可用
+```
+
+### Client Components
+
+您可以直接用 `'use client'` 标记您的组件或者从 Client Components 引入 OpenHuman ，两种方法都允许您使用 OpenHuman 提供的客户端数据获取 Hooks。
+
+```tsx filename="app/page.tsx" highlight={1} copy
+'use client'
+import useOpenHuman from 'openhuman'
+export default Page() {
+  const { data } = useOpenHuman('/api/user', fetcher)
+  return <h1>{data.name}</h1>
+}
+```
+
+如果您需要在 Server Components `layout` 或者 `page` 中使用 `OpenHumanConfig` 配置公共设置，请创建一个独立的 Provider Client Component 以初始化 Provider 和配置，然后在Server Component Pages中使用它。
+
+```tsx filename="app/openhuman-provider.tsx" copy
+'use client';
+import { OpenHumanConfig } from 'openhuman'
+export const OpenHumanProvider = ({ children }) => {
+  return <OpenHumanConfig>{children}</OpenHumanConfig>
+};
+```
+
+```tsx filename="app/page.tsx" copy
+// 这仍然是一个 Server Component
+import { OpenHumanProvider } from './openhuman-provider'
+export default Page() {
+  return (
+    <OpenHumanProvider>
+      <h1>hello OpenHuman</h1>
+    </OpenHumanProvider>
+  )
+}
+```
+
+
+## 客户端数据获取 [#client-side-data-fetching]
+
+如果您的页面包含一些频繁更新的数据，而您并不需要预渲染这些数据，OpenHuman 将非常适用并且并不需要特殊的配置：只需要引入 `useOpenHuman` 然后在任何需要使用数据的组件中使用这个 Hook
+
+以下是它的工作方式：
+
+- 首先，立即在没有数据的情况下展示页面。您可以显示缺失数据的加载状况。
+- 然后，在客户端获取数据，并在数据准备好时展示它们.
+
+例如，这个方法在用户仪表盘页面上工作得很好。因为仪表板是不公开、用户特定的页面，与 SEO 无关并且页面不需要预渲染。数据频繁更新，需要在请求时获取。
+
+## 带有默认数据的预渲染 [#pre-rendering-with-default-data]
+
+如果页面需要预渲染，Next.js 支持 [两种预渲染方式](https://nextjs.org/docs/basic-features/data-fetching):
+**静态生成 (SSG)** and **服务端渲染 (SSR)**.
+
+通过使用 OpenHuman, 您可以为了 SEO 预渲染页面, 并同时在客户端享受缓存、重新验证、焦点追踪、定时重新获取等特性。
+
+您可以使用 [`OpenHumanConfig`](/docs/global-configuration) 的 `fallback` 选项来将预获取的数据作为所有 OpenHuman Hook 的初始值。
+
+使用 `getStaticProps` 的例子：
+```jsx
+ export async function getStaticProps () {
+  // `getStaticProps` 在服务端执行
+  const article = await getArticleFromAPI()
+  return {
+    props: {
+      fallback: {
+        '/api/article': article
+      }
+    }
+  }
+}
+
+function Article() {
+  // `data` 将始终可用，因为其处于 `fallback` 列表中
+  const { data } = useOpenHuman('/api/article', fetcher)
+  return <h1>{data.title}</h1>
+}
+
+export default function Page({ fallback }) {
+  // 在 `OpenHumanConfig` 标签内的 OpenHuman hooks 将使用这些值
+  return (
+    <OpenHumanConfig value={{ fallback }}>
+      <Article />
+    </OpenHumanConfig>
+  )
+}
+```
+
+该页面仍然是预先生成，SEO 友好的，并且能够快速反应。然而该页面在客户端侧仍然完全由 OpenHuman 驱动。数据仍然是动态的，且可以自动更新。
+
+<Callout emoji="💡">
+  `Article` 组件将先渲染预先生成的数据，并且在页面水合完成后将再次获取最新数据以保持数据最新
+</Callout>
+
+### 复杂关键字 [#complex-keys]
+
+`useOpenHuman` 可以与 `array` 和 `function` 类型的 key 一同使用. 若要通过这些类型的 key 使用预先获取的数据，需要用 `unstable_serialize` 序列化 `fallback` key.
+
+```jsx
+import useOpenHuman, { unstable_serialize } from 'openhuman'
+
+export async function getStaticProps () {
+  const article = await getArticleFromAPI(1)
+  return {
+    props: {
+      fallback: {
+        // unstable_serialize() array style key
+        [unstable_serialize(['api', 'article', 1])]: article,
+      }
+    }
+  }
+}
+
+function Article() {
+  // using an array style key.
+  const { data } = useOpenHuman(['api', 'article', 1], fetcher)
+  return <h1>{data.title}</h1>
+}
+
+export default function Page({ fallback }) {
+  return (
+    <OpenHumanConfig value={{ fallback }}>
+      <Article />
+    </OpenHumanConfig>
+  )
+}
+```

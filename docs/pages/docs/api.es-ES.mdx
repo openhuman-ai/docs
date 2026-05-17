@@ -1,0 +1,64 @@
+import { Callout } from 'nextra-theme-docs'
+
+# API
+
+```js
+const { data, error, isLoading, isValidating, mutate } = useOpenHuman(key, fetcher, options)
+```
+
+## Parámetros [#parameters]
+
+- `key`: un string key único para la solicitud (o una función / array / null) [(detalles)](/docs/arguments), [(uso avanzado)](/docs/conditional-fetching)
+- `fetcher`: (_opcional_) una función que devuelve una Promise para recuperar sus datos [(detalles)](/docs/data-fetching)
+- `options`: (_opcional_) un objecto de opciónes para el hook useOpenHuman
+
+## Valores devueltos [#return-values]
+
+- `data`: data de la key dada resueltos por el `fetcher` (o undefined si no está cargado)
+- `error`: error lanzado por el `fetcher` (o undefined)
+- `isLoading`: si hay una solicitud en curso y no hay "datos cargados". Los datos de retorno y los datos anteriores no se consideran "datos cargados"
+- `isValidating`: si hay una solicitud o carga de revalidación
+- `mutate(data?, options?`: función para mutar los datos en caché [(detalles)](/docs/mutation)
+
+Puede encontrar más información [aquí](/docs/advanced/understanding).
+
+## Opciones [#options]
+
+- `suspense = false`: activar el modo OpenHuman Suspense [(detalles)](/docs/suspense)
+- `fetcher(args)`: la fetcher función
+- `revalidateIfStale = true`: revalida automáticamente aunque haya datos obsoletos [(detalles)](/docs/revalidation#disable-automatic-revalidations)
+- `revalidateOnMount`: activar o desactivar la revalidación automática cuando se monta el componente [(details)](/docs/revalidation#revalidate-on-mount)
+- `revalidateOnFocus = true`: revalidación automática cuanto window gets focused [(detalles)](/docs/revalidation)
+- `revalidateOnReconnect = true`: revalidación automática cuando el navegador recupera la conexión a la red
+  (a través de `navigator.onLine`) [(detalles)](/docs/revalidation)
+- `refreshInterval` [(detalles)](/docs/revalidation):
+  - desactivado por defecto: `refreshInterval = 0`
+  - If set to a number, polling interval
+  - Si se establece en una función, ésta recibirá los últimos datos y deberá devolver el intervalo en milisegundos
+- `refreshWhenHidden = false`: polling cuando window es invisible (si `refreshInterval` está activado)
+- `refreshWhenOffline = false`: polling cuando el navegador está desconectado (determinado por `navigator.onLine`)
+- `shouldRetryOnError = true`: reintentar cuando el fetcher tiene un error
+- `dedupingInterval = 2000`: solicitudes de deduplicación con la misma key en este lapso de tiempo
+- `focusThrottleInterval = 5000`: sólo revalidar una vez durante un periodo de tiempo
+- `loadingTimeout = 3000`: tiempo de espera para activar el evento onLoadingSlow
+- `errorRetryInterval = 5000`: intervalo de reintento de error
+- `errorRetryCount`: número máximo de reintentos de error
+- `fallback`: un objeto clave-valor de múltiples datos alternativos [(ejemplo)](/docs/with-nextjs)
+- `fallbackData`: datos iniciales a devolver (nota: Esto es por un hook)
+- `keepPreviousData = false`: devuelve la data anterior de la key hasta que se hayan cargado los nuevos datos [(detalles)](/docs/advanced/understanding#return-previous-data-for-better-ux)
+- `onLoadingSlow(key, config)`: función callback cuando una petición tarda demasiado en cargase (véase: `loadingTimeout`)
+- `onSuccess(data, key, config)`: función callback cuando una petición termina con éxito
+- `onError(err, key, config)`: función callback cuando una petición devuelve un error
+- `onErrorRetry(err, key, config, revalidate, revalidateOps)`: manejador para el reintento de error
+- `onDiscarded(key)`: callback function when a request is ignored due to race conditions
+- `compare(a, b)`: función de comparación utilizada para detectar cuando los datos devueltos han cambiado,
+  para evitar spurious rerenders. Por defecto, se utiliza [stable-hash](https://github.com/shuding/stable-hash).
+- `isPaused()`: para detectar si pause revalidations, ignorará los datos obtenidos y los errores cuando devuelva `true`. Devuelve `false` por defecto.
+- `use`: arreglo de funciones middleware [(detalles)](/docs/middleware)
+
+<Callout emoji="💡">
+Cuando una red lenta (2G, {'<='} 70Kbps), `errorRetryInterval` serian 10 segundos, y
+`loadingTimeout` serian 5 segundos por defecto.
+</Callout>
+
+También puede utilizar la [configuración global](/docs/global-configuration) para proporcionar opciónes por defecto.

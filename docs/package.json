@@ -1,0 +1,39 @@
+{
+  "name": "openhuman",
+  "version": "1.0.0",
+  "description": "OpenHuman - Visualization tools for research community",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next",
+    "debug": "NODE_OPTIONS='--inspect' next",
+    "start": "next start",
+    "build": "next build"
+  },
+  "author": "OpenHuman",
+  "license": "MIT",
+  "dependencies": {
+    "@vercel/analytics": "^1.2.2",
+    "3d-force-graph": "^1.73.3",
+    "d3-force-3d": "^3.0.5",
+    "focus-visible": "^5.2.0",
+    "intersection-observer": "^0.12.2",
+    "next": "^13.2.4",
+    "next-sitemap": "^4.2.3",
+    "nextra": "^2.13.4",
+    "nextra-theme-docs": "^2.13.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-intersection-observer": "^9.10.1",
+    "three": "^0.164.1",
+    "three-forcegraph": "^1.41.13"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.3"
+  },
+  "prettier": {
+    "embeddedLanguageFormatting": "off",
+    "htmlWhitespaceSensitivity": "strict"
+  }
+}
