@@ -1,0 +1,10 @@
+# Preserve old Nextra URL redirects
+
+/docs /docs/getting-started 301
+/advanced/performance /docs/advanced/performance 301
+/advanced/cache /docs/advanced/cache 301
+/docs/cache /docs/advanced/cache 301
+/docs/options /docs/api 301
+/change-log /docs/change-log 301
+/blog/openhuman-1 /blog/openhuman-v1 301
+/examples /examples/basic 302

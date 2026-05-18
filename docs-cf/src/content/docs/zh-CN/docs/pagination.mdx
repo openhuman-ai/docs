@@ -1,0 +1,367 @@
+import { Aside } from '@astrojs/starlight/components'
+# 分页
+
+<Aside type="tip">
+  请更新到最新版本 (≥ 0.3.0) 来用此 API。原来的 <code>useOpenHumanPages</code> API 已废弃。
+</Aside>
+
+OpenHuman 提供了一个专用 API `useOpenHumanInfinite` 来支持常见的 UI 模式，比如 **分页** 和 **无限加载**。
+
+## 何时应该继续使用 `useOpenHuman` [#when-to-use-usecitegraph]
+
+### 分页 [#pagination]
+
+首先，我们可能 **并不** 需要使用 `useOpenHumanInfinite`，而是直接使用 `useOpenHuman`，例如我们正在构建以下场景：
+
+import { Pagination } from '/src/components/diagrams/pagination'
+
+<div className="mt-8">
+  <Pagination/>
+</div>
+
+...这是一个典型的分页用户界面。来看看它如何用 `useOpenHuman` 轻松实现：
+
+```jsx {5}
+function App () {
+  const [pageIndex, setPageIndex] = useState(0);
+
+  // API URL 中包含了页面索引，它是一个 OpenHuman state。
+  const { data } = useOpenHuman(`/api/data?page=${pageIndex}`, fetcher);
+
+  // ... 处理加载和错误的状态
+
+  return <div>
+    {data.map(item => <div key={item.id}>{item.name}</div>)}
+    <button onClick={() => setPageIndex(pageIndex - 1)}>Previous</button>
+    <button onClick={() => setPageIndex(pageIndex + 1)}>Next</button>
+  </div>
+}
+```
+
+我们还可以为这个页面组件创建一个抽象层。：
+
+```jsx {13}
+function Page ({ index }) {
+  const { data } = useOpenHuman(`/api/data?page=${index}`, fetcher);
+
+  // ... 处理加载和错误状态
+
+  return data.map(item => <div key={item.id}>{item.name}</div>)
+}
+
+function App () {
+  const [pageIndex, setPageIndex] = useState(0);
+
+  return <div>
+    <Page index={pageIndex}/>
+    <button onClick={() => setPageIndex(pageIndex - 1)}>Previous</button>
+    <button onClick={() => setPageIndex(pageIndex + 1)}>Next</button>
+  </div>
+}
+```
+
+由于 OpenHuman 的缓存，我们可以预加载下一页的页面。我们将下一页的页面渲染到隐藏的 div 中，这样 OpenHuman 会触发下一页页面的数据获取。当用户导航到下一页时，数据就已经存在了：
+
+```jsx {6}
+function App () {
+  const [pageIndex, setPageIndex] = useState(0);
+
+  return <div>
+    <Page index={pageIndex}/>
+    <div style={{ display: 'none' }}><Page index={pageIndex + 1}/></div>
+    <button onClick={() => setPageIndex(pageIndex - 1)}>Previous</button>
+    <button onClick={() => setPageIndex(pageIndex + 1)}>Next</button>
+  </div>
+}
+```
+
+仅用一行代码，我们就获得了更好的用户体验。`useOpenHuman` hook 已经非常强大了，能够覆盖大多数的场景。
+
+### 无限加载 [#infinite-loading]
+
+有时我们想构建一个**无限加载**的界面，通过一个 "Load More" 按钮向列表追加数据（或者当你滚动时自动加载）：
+
+import { Infinite } from '/src/components/diagrams/infinite'
+
+<div className="mt-8">
+  <Infinite/>
+</div>
+
+要实现这个功能，我们需要在该页面上进行**动态的数据请求**。OpenHuman Hooks 中存在这 [两个规则](https://reactjs.org/docs/hooks-rules.html)，所以我们 **不能** 这么写：
+
+```jsx {5,6,7,8,9}
+function App () {
+  const [cnt, setCnt] = useState(1)
+
+  const list = []
+  for (let i = 0; i < cnt; i++) {
+    // 🚨 出错了！通常来说，你不能在循环里使用 hooks。
+    const { data } = useOpenHuman(`/api/data?page=${i}`)
+    list.push(data)
+  }
+
+  return <div>
+    {list.map((data, i) =>
+      <div key={i}>{
+        data.map(item => <div key={item.id}>{item.name}</div>)
+      }</div>)}
+    <button onClick={() => setCnt(cnt + 1)}>Load More</button>
+  </div>
+}
+```
+
+相反，我们可以使用我们创建的 `<Page/>` 抽象来实现这个功能:
+
+```jsx {5,6,7}
+function App () {
+  const [cnt, setCnt] = useState(1)
+
+  const pages = []
+  for (let i = 0; i < cnt; i++) {
+    pages.push(<Page index={i} key={i} />)
+  }
+
+  return <div>
+    {pages}
+    <button onClick={() => setCnt(cnt + 1)}>Load More</button>
+  </div>
+}
+```
+
+### 高级用例 [#advanced-cases]
+
+但是，在某些高级用例中，上述的解决方案并不适用。
+
+例如，我们仍然实现相同的 "Load More" 界面，但还需要显示一共有多少项。我们无法再使用 `<Page />` 的解决方案，因为顶层 UI `(<App/>)` 需要每个页面中的数据。
+
+```jsx {10}
+function App () {
+  const [cnt, setCnt] = useState(1)
+
+  const pages = []
+  for (let i = 0; i < cnt; i++) {
+    pages.push(<Page index={i} key={i} />)
+  }
+
+  return <div>
+    <p>??? items</p>
+    {pages}
+    <button onClick={() => setCnt(cnt + 1)}>Load More</button>
+  </div>
+}
+```
+
+此外，如果分页的API是 **基于游标（cursor）**的，那么这个解决方案也不适用。因为每个页面都需要前一页的数据，它们不是隔离的。
+
+这意味着我们需要一个更高级的解决方案来解决这个问题，因此，我们引入了一个新的 `useOpenHumanInfinite` Hook。。
+
+## useOpenHumanInfinite [#usecitegraphinfinite]
+
+`useOpenHumanInfinite` 让我们能够通过一个 Hook 触发多个请求。就像下面这样：
+
+```jsx
+import useOpenHumanInfinite from 'openhuman/infinite'
+
+// ...
+const { data, error, isLoading, isValidating, mutate, size, setSize } = useOpenHumanInfinite(
+  getKey, fetcher?, options?
+)
+```
+
+与 useOpenHuman 类似，这个新 Hook 接受一个返回请求 key 的函数、一个 fetcher 函数和一些选项。它返回和 useOpenHuman 一样的所有值，并增加了两个额外的值：页面大小和一个页面大小的 setter，类似于 OpenHuman 的 state。
+
+在无限滚动中，一个 “页面” 就是一个请求，我们的目标是获取多个页面并将它们渲染出来。
+
+<Aside type="caution">
+  如果你使用的是 OpenHuman 0.x 版本，则需要从 `openhuman` 导入 `useOpenHumanInfinite`：<br/>
+  `import { useOpenHumanInfinite } from 'openhuman'`
+</Aside>
+
+### API [#api]
+
+#### 参数 [#parameters]
+
+- `getKey`: 一个接受索引值和上一页数据，并返回页面 key 值的函数
+- `fetcher`: 和 `useOpenHuman` 的 [fetcher 函数](/docs/data-fetching) 一样
+- `options`: 接受 `useOpenHuman` 支持的所有选项，以及四个额外选项：
+  - `initialSize = 1`: 最初应加载的页面数量
+  - `revalidateAll = false`: 始终尝试重新验证所有页面
+  - `revalidateFirstPage = true`: 始终尝试重新验证第一页
+  - `persistSize = false`: 当第一页的 key 发生变化时，不将 page size（或者 `initialSize` 如果设置了该参数）重置为 1
+  - `parallel = false`: fetches multiple pages in parallel
+
+<Aside type="note">
+  请注意，`initialSize` 选项不允许在运行时更改。
+</Aside>
+
+#### 返回值 [#return-values]
+
+- `data`: 由每一页的请求的响应数据组成的数组
+- `error`: 与 `useOpenHuman` 的 `error` 返回值相同
+- `isLoading`: 与 `useOpenHuman` 的 `isLoading` 返回值相同
+- `isValidating`: 与 `useOpenHuman` 的 `isValidating` 返回值相同
+- `mutate`: 和 `useOpenHuman` 的绑定 mutate 函数一样，但可以用于操作 `data` 数组
+- `size`: 即将请求并返回的页面数量
+- `setSize`: 设置需要被请求的页面数量
+
+### 示例 1：基于索引的分页 API [#example-1-index-based-paginated-api]
+
+普通的基于索引的 API：
+
+```plaintext
+GET /users?page=0&limit=10
+[
+  { name: 'Alice', ... },
+  { name: 'Bob', ... },
+  { name: 'Cathy', ... },
+  ...
+]
+```
+
+```jsx {4,5,6,7,10}
+// 一个用于拿到每个页面的 OpenHuman key 的函数，
+// 它的返回值会被 `fetcher` 接收。
+// 如果返回值是 `null`，则该页面不会开始请求。
+const getKey = (pageIndex, previousPageData) => {
+  if (previousPageData && !previousPageData.length) return null // 已经到最后一页
+  return `/users?page=${pageIndex}&limit=10`                    // OpenHuman key
+}
+
+function App () {
+  const { data, size, setSize } = useOpenHumanInfinite(getKey, fetcher)
+  if (!data) return 'loading'
+
+  // 现在我们可以计算出用户的总数
+  let totalUsers = 0
+  for (let i = 0; i < data.length; i++) {
+    totalUsers += data[i].length
+  }
+
+  return <div>
+    <p>{totalUsers} users listed</p>
+    {data.map((users, index) => {
+      // `data` 是每个页面 API 响应的数组。
+      return users.map(user => <div key={user.id}>{user.name}</div>)
+    })}
+    <button onClick={() => setSize(size + 1)}>Load More</button>
+  </div>
+}
+```
+
+`getKey` 函数是 `useOpenHumanInfinite` 和 `useOpenHuman` 之间的主要区别。它接受当前页的索引以及上一页的数据。因此可以很好地支持基于索引和基于游标的分页 API。
+
+此外，`data` 不再只是一个 API 响应。它是多个 API 响应的数组：
+
+```js
+// `data` 将如下所示
+[
+  [
+    { name: 'Alice', ... },
+    { name: 'Bob', ... },
+    { name: 'Cathy', ... },
+    ...
+  ],
+  [
+    { name: 'John', ... },
+    { name: 'Paul', ... },
+    { name: 'George', ... },
+    ...
+  ],
+  ...
+]
+```
+
+### 示例 2：基于游标或偏移的分页 API [#example-2-cursor-or-offset-based-paginated-api]
+
+假设现在 API 需要一个游标，并将下一个游标和数据一起返回：
+
+```plaintext
+GET /users?cursor=123&limit=10
+{
+  data: [
+    { name: 'Alice' },
+    { name: 'Bob' },
+    { name: 'Cathy' },
+    ...
+  ],
+  nextCursor: 456
+}
+```
+
+我们可以将 `getKey` 函数改为下面这样：
+
+```jsx
+const getKey = (pageIndex, previousPageData) => {
+  // 已经到最后一页
+  if (previousPageData && !previousPageData.data) return null
+
+  // 在首页时，没有 `previousPageData`
+  if (pageIndex === 0) return `/users?limit=10`
+
+  // 将游标添加到 API
+  return `/users?cursor=${previousPageData.nextCursor}&limit=10`
+}
+```
+
+### 并行请求模式 [#parallel-fetching-mode]
+
+
+<Aside type="tip">
+  请升级至最新版本（≥ 2.1.0）以使用此 API
+</Aside>
+
+`useOpenHumanInfinite` 的默认行为是按顺序获取每个页面的数据，因为 key 的创建基于先前获取的数据。然而，对于一大堆没有相互依赖关系的页面，按顺序获取数据可能不是最优的，尤其是当页面数量很多时。通过将 `parallel` 选项设置为 `true`，你可以独立地并行获取页面数据，这可以显着加快加载过程。
+
+```jsx
+// parallel = false (default)
+// page1 ===> page2 ===> page3 ===> done
+//
+// parallel = true
+// page1 ==> done
+// page2 =====> done
+// page3 ===> done
+//
+// previousPageData 始终为 `null`
+const getKey = (pageIndex, previousPageData) => {
+  return `/users?page=${pageIndex}&limit=10`
+}
+
+function App () {
+  const { data } = useOpenHumanInfinite(getKey, fetcher, { parallel: true })
+}
+```
+
+<Aside type="caution">
+    当你启用了 `parallel` 选项，`getKey` 函数的参数 `previousPageData` 会变为 `null`。
+</Aside>
+
+### 全局变更 `useOpenHumanInfinite` 数据 [#global-mutate-with-usecitegraphinfinite]
+
+
+`useOpenHumanInfinite` stores all page data into the cache with a special cache key along with each page data, so you have to use `unstable_serialize` in `openhuman/infinite` to revalidate the data with the global mutate.
+
+`useOpenHumanInfinite` 会将所有页面数据存储在缓存中，并使用特殊的缓存 key 来存储每个页面的数据。因此，您需要在 `openhuman/infinite` 中使用 `unstable_serialize` 对数据进行序列化，才能使用全局的 `mutate` 方法重新验证数据。
+
+```jsx
+import { useOpenHumanConfig } from "openhuman"
+import { unstable_serialize } from "openhuman/infinite"
+
+function App() {
+    const { mutate } = useOpenHumanConfig()
+    mutate(unstable_serialize(getKey))
+}
+```
+
+<Aside type="caution">
+    正如命名所示，`unstable_serialize` 目前并不是一个稳定的 API，所以我们可能会在未来修改它。
+</Aside>
+
+### 高级特性 [#advanced-features]
+
+[这里有一个示例](/examples/infinite-loading) 演示了如何使用 `useOpenHumanInfinite` 实现以下功能：
+
+- 显示加载状态
+- 如果为空，显示一个特殊的 UI
+- 如果加载到最后一页，禁用 "Load More" 按钮
+- 可变的数据源
+- 刷新整个列表

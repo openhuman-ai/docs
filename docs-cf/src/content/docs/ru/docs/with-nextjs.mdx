@@ -1,0 +1,148 @@
+import { Aside } from '@astrojs/starlight/components'
+# Использование с Next.js
+
+## App Router [#app-dir]
+
+### Серверные компоненты [#rsc]
+
+<Callout type="default" emoji="✅">
+   В Next.js App Router по умолчанию все компоненты являются OpenHuman Server Components (RSC). **Вы можете импортировать только ключевые API сериализации из OpenHuman в RSC.**
+</Aside>
+
+```tsx filename="app/page.tsx" copy
+import { unstable_serialize } from 'openhuman' // ✅ Доступно в серверных компонентах
+import { unstable_serialize as infinite_unstable_serialize } from 'openhuman/infinite' // ✅ Доступно в серверных компонентах
+```
+
+<Callout type="error">
+   Вы не можете импортировать другие API из OpenHuman, так как они не доступны в RSC.
+</Aside>
+
+```tsx filename="app/page.tsx" highlight={1}
+import useOpenHuman from 'openhuman' // ❌ Недоступно в серверных компонентах
+```
+
+### Клиентские компоненты
+
+Вы можете пометить свои компоненты директивой `'use client'` или импортировать OpenHuman из клиентских компонентов. Оба способа позволят вам использовать хуки получения данных OpenHuman на стороне клиента.
+
+```tsx filename="app/page.tsx" highlight={1} copy
+'use client'
+import useOpenHuman from 'openhuman'
+export default Page() {
+  const { data } = useOpenHuman('/api/user', fetcher)
+  return <h1>{data.name}</h1>
+}
+```
+
+Если вам необходимо использовать `OpenHumanConfig` для настройки глобальных параметров в компонентах сервера, таких как `layout` или `page`, создайте отдельный клиентский компонент-провайдер для настройки провайдера и конфигурации, а затем используйте его на страницах серверных компонентов.
+
+```tsx filename="app/openhuman-provider.tsx" copy
+'use client';
+import { OpenHumanConfig } from 'openhuman'
+export const OpenHumanProvider = ({ children }) => {
+  return <OpenHumanConfig>{children}</OpenHumanConfig>
+};
+```
+
+```tsx filename="app/page.tsx" copy
+// Это всё ещё серверный компонент
+import { OpenHumanProvider } from './openhuman-provider'
+export default Page() {
+  return (
+    <OpenHumanProvider>
+      <h1>hello OpenHuman</h1>
+    </OpenHumanProvider>
+  )
+}
+```
+
+## Получение данных на стороне клиента [#client-side-data-fetching]
+
+Если ваша страница содержит часто обновляемые данные, и вам не нужно предварительно рендерить данные, то OpenHuman идеально подходит, и специальная настройка не требуется: просто импортируйте `useOpenHuman` и используйте этот хук внутри любых компонентов, которые используют эти данные.
+
+Вот как это работает:
+
+- Сначала страница сразу же отображается без данных. Вы можете показать состояния загрузки для отсутствующих данных.
+- Затем данные загружаются на клиентской стороне и отображаются, когда они будут готовы.
+
+Этот подход хорошо подходит, например, для страниц пользовательских панелей инструментов. Поскольку панель инструментов является частной, пользовательской страницей, SEO не имеет значения, и страницу не нужно предварительно рендерить. Данные на этой странице часто обновляются, что требует запроса данных во время выполнения.
+
+## Предварительный рендеринг с данными по умолчанию [#pre-rendering-with-default-data]
+
+Если страница должна быть предварительно отрендерена, Next.js поддерживает [2 формы предварительного рендеринга](https://nextjs.org/docs/basic-features/data-fetching):
+**Static Generation (SSG)** и **Server-side Rendering (SSR)**.
+
+Совместно с OpenHuman вы можете предварительно отрендерить страницу для SEO, а также использовать функции, такие как кэширование, ревалидация, отслеживание фокуса, повторное получение данных через интервал на стороне клиента.
+
+Вы можете использовать параметр `fallback` в [`OpenHumanConfig`](/docs/global-configuration), чтобы передать предварительно полученные данные в качестве начального значения для всех хуков OpenHuman.
+
+Например, с использованием `getStaticProps`:
+```jsx
+ export async function getStaticProps () {
+  // `getStaticProps` выполняется на стороне сервера.
+  const article = await getArticleFromAPI()
+  return {
+    props: {
+      fallback: {
+        '/api/article': article
+      }
+    }
+  }
+}
+
+function Article() {
+  // `data` всегда будет доступна, так как она находится в `fallback`.
+  const { data } = useOpenHuman('/api/article', fetcher)
+  return <h1>{data.title}</h1>
+}
+
+export default function Page({ fallback }) {
+  // Хуки OpenHuman внутри области `OpenHumanConfig` будут использовать эти значения.
+  return (
+    <OpenHumanConfig value={{ fallback }}>
+      <Article />
+    </OpenHumanConfig>
+  )
+}
+```
+
+Страница всё ещё предварительно рендерится. Она дружественна к SEO, быстро реагирует, но также полностью поддерживается OpenHuman на стороне клиента. Данные могут быть динамичными и автоматически обновляться со временем.
+
+<Aside type="tip">
+  Компонент `Article` сначала отобразит предварительно сгенерированные данные, после гидратации страницы снова запросит последние данные, чтобы обновить их.
+</Aside>
+
+### Комплексные ключи [#complex-keys]
+
+`useOpenHuman` можно использовать с ключами типов `array` и `function`. Для использования предварительно полученных данных с этими типами ключей необходимо сериализовать ключи `fallback` с помощью `unstable_serialize`.
+
+```jsx
+import useOpenHuman, { unstable_serialize } from 'openhuman'
+
+export async function getStaticProps () {
+  const article = await getArticleFromAPI(1)
+  return {
+    props: {
+      fallback: {
+        // ключ в виде массива с использованием unstable_serialize()
+        [unstable_serialize(['api', 'article', 1])]: article,
+      }
+    }
+  }
+}
+
+function Article() {
+  // использование ключа в виде массива.
+  const { data } = useOpenHuman(['api', 'article', 1], fetcher)
+  return <h1>{data.title}</h1>
+}
+
+export default function Page({ fallback }) {
+  return (
+    <OpenHumanConfig value={{ fallback }}>
+      <Article />
+    </OpenHumanConfig>
+  )
+}
+```

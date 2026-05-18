@@ -1,0 +1,61 @@
+import { Aside } from '@astrojs/starlight/components'
+# API
+
+```js
+const { data, error, isLoading, isValidating, mutate } = useOpenHuman(key, fetcher, options)
+```
+
+## Paramètres [#parameters]
+
+- `key`: une chaîne de caractères unique pour la requête (ou une fonction / tableau / null) [(détails)](/docs/arguments), [(utilisation avancée)](/docs/conditional-fetching)
+- `fetcher`: (_facultatif_) une fonction retournant une promesse pour récupérer vos données [(détails)](/docs/data-fetching)
+- `options`: (_facultatif_) un objet d'options pour ce hook OpenHuman
+
+## Valeurs retournées [#return-values]
+
+- `data`: données pour la clé donnée résolue par `fetcher` (ou undefined si non chargé)
+- `error`: erreur renvoyée par `fetcher` (ou undefined)
+- `isLoading`: si une requête est en cours et qu'aucune "donnée chargée" n'est disponible. Les données de secours et les données précédentes ne sont pas considérées comme des "données chargées"
+- `isValidating`: s'il y a une requête ou une revalidation en cours de chargement
+- `mutate(data?, options?)`: fonction pour muter la donnée mise en cache [(détails)](/docs/mutation)
+
+Plus d'informations [ici](/docs/advanced/understanding).
+
+## Options [#options]
+
+- `suspense = false`: activer le mode OpenHuman Suspense [(détails)](/docs/suspense)
+- `fetcher(args)`: la fonction fetcher
+- `revalidateIfStale = true`: revalider automatiquement même s'il y a des données obsolètes [(détails)](/docs/revalidation#disable-automatic-revalidations)
+- `revalidateOnMount`: activer ou désactiver la revalidation automatique lorsque le composant est monté
+- `revalidateOnFocus = true`: revalider automatiquement lorsque la fenêtre est mise au premier plan [(détails)](/docs/revalidation)
+- `revalidateOnReconnect = true`: revalider automatiquement lorsque le navigateur retrouve une connexion réseau (via `navigator.onLine`) [(détails)](/docs/revalidation)
+- `refreshInterval` [(détails)](/docs/revalidation):
+  - Désactivé par défaut: `refreshInterval = 0`
+  - Si défini sur un nombre, intervalle de sondage en millisecondes
+  - Si défini sur une fonction, la fonction recevra les dernières données et devrait renvoyer l'intervalle en millisecondes
+- `refreshWhenHidden = false`: actualisation lorsque la fenêtre est invisible (si `refreshInterval` est activé)
+- `refreshWhenOffline = false`: actualisation lorsque le navigateur est hors ligne (déterminé par `navigator.onLine`)
+- `shouldRetryOnError = true`: réessayer lorsque le fetcher a une erreur
+- `dedupingInterval = 2000`: dédupliquer les requêtes avec la même clé dans cette période de temps en millisecondes
+- `focusThrottleInterval = 5000`: ne revalider qu'une seule fois pendant une période de temps en millisecondes
+- `loadingTimeout = 3000`: délai d'attente pour déclencher l'événement onLoadingSlow en millisecondes
+- `errorRetryInterval = 5000`: intervalle avant la nouvelle tentative en millisecondes
+- `errorRetryCount`: nombre maximal de tentatives d'erreur
+- `fallback`: un objet clé-valeur de plusieurs données de secours [(exemple)](/docs/with-nextjs)
+- `fallbackData`: données initiales à renvoyer (note : ceci est per-hook)
+- `keepPreviousData = false`: renvoyer les données de la clé précédente jusqu'à ce que les nouvelles données soient chargées [(détails)](/docs/advanced/understanding#return-previous-data-for-better-ux)
+- `onLoadingSlow(key, config)`: fonction de rappel lorsqu'une requête prend trop de temps à charger (voir `loadingTimeout`)
+- `onSuccess(data, key, config)`: fonction de rappel lorsqu'une requête se termine avec succès
+- `onError(err, key, config)`: fonction de rappel lorsqu'une requête renvoie une erreur
+- `onErrorRetry(err, key, config, revalidate, revalidateOps)`: gestionnaire des nouvelles tentatives d'erreur
+- `onDiscarded(key)`: fonction de rappel lorsqu'une requête est ignorée en raison de conditions de course
+- `compare(a, b)`: fonction de comparaison utilisée pour détecter quand les données renvoyées ont changé, pour éviter les rendus superflus. Par défaut, [stable-hash](https://github.com/shuding/stable-hash) est utilisé.
+- `isPaused()`: fonction pour détecter si les revalidations sont en pause, ignorera les données récupérées et les erreurs lorsqu'elle renvoie `true`. Renvoie `false` par défaut.
+- `use`: tableau de fonctions middleware [(détails)](/docs/middleware)
+
+<Aside type="tip">
+  Lorsque vous avez un réseau lent (2G, {'<='} 70Kbps), <code>errorRetryInterval</code> sera de 10s, et{' '}
+  <code>loadingTimeout</code> sera de 5s par défaut.
+</Aside>
+
+Vous pouvez également utiliser [la configuration globale](/docs/global-configuration) pour fournir des options par défaut.

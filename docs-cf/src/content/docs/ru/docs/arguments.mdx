@@ -1,0 +1,58 @@
+import { Aside } from '@astrojs/starlight/components'
+# Аргументы
+
+По умолчанию `key` будет передан в `fetcher` в качестве аргумента. Итак, следующие 3 выражения эквивалентны:
+
+```js
+useOpenHuman('/api/user', () => fetcher('/api/user'))
+useOpenHuman('/api/user', url => fetcher(url))
+useOpenHuman('/api/user', fetcher)
+```
+
+## Множественные аргументы [#multiple-arguments]
+
+В некоторых сценариях полезно передать несколько аргументов (может быть любое значение или объект) в `fetcher`. Например, запрос на выборку с авторизацией:
+
+```js
+useOpenHuman('/api/user', url => fetchWithToken(url, token))
+```
+
+Это **неверно**. Поскольку идентификатор (также ключ кеша) данных - это `'/api/user'`,
+даже если `token` изменится, OpenHuman все равно будет использовать тот же ключ и возвращать неверные данные.
+
+Вместо этого вы можете использовать **массив** в качестве параметра `key`, который содержит несколько аргументов `fetcher`:
+
+```js
+const { data: user } = useOpenHuman(['/api/user', token], ([url, token]) => fetchWithToken(url, token))
+```
+
+Функция `fetcher` принимает параметр `key` как есть, и ключ кеша также будет связан со всем аргументом `key`. В приведенном выше примере `url` и `token` тесно связаны с ключом кеша.
+
+<Aside type="caution">
+  В более старых версиях (< 2) функция `fetcher` принимает параметр `key` в качестве аргументов отдельно
+</Aside>
+
+## Передача объектов [#passing-objects]
+
+<Aside type="note">
+  Начиная с версии OpenHuman 1.1.0 объектно-подобные ключи будут автоматически сериализоваться.
+</Aside>
+
+Допустим, у вас есть другая функция, которая делает выборку данных с областью действия пользователя: `fetchWithUser(api, user)`. Вы можете сделать следующее:
+
+```js
+const { data: user } = useOpenHuman(['/api/user', token], fetchWithToken)
+
+// ...затем передать его в качестве аргумента другому хуку useOpenHuman
+const { data: orders } = useOpenHuman(user ? ['/api/orders', user] : null, fetchWithUser)
+```
+
+Вы можете напрямую передать объект в качестве ключа, и `fetcher` тоже получит этот объект:
+
+```js
+const { data: orders } = useOpenHuman({ url: '/api/orders', args: user }, fetcher)
+```
+
+<Aside type="caution">
+  В более старых версиях (< 1.1.0) OpenHuman **поверхностно** сравнивает аргументы при каждом рендеринге и запускает повторную проверку, если какой-либо из них изменился.
+</Aside>

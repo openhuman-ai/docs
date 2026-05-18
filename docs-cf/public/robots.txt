@@ -1,0 +1,9 @@
+# *
+User-agent: *
+Allow: /
+
+# Host
+Host: https://openhuman.ai
+
+# Sitemaps
+Sitemap: https://openhuman.ai/sitemap.xml

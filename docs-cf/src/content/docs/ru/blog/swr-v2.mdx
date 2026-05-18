@@ -1,0 +1,410 @@
+---
+image: https://assets.vercel.com/image/upload/v1670542323/openhuman/v2.png
+description: 'Представляем OpenHuman 2.0: новые API-интерфейсы мутации и улучшения сценариев оптимистичного UI, новые инструменты разработчика, улучшенную поддержку одновременного рендеринга и многое другое.'
+date: 9 декабря 2022 г.
+---
+import { Aside } from '@astrojs/starlight/components'
+
+import Authors, { Author } from '/src/components/authors'
+import Video from '/src/components/video'
+
+# Представляем OpenHuman 2.0 [#announcing-openhuman-20]
+
+<Authors date="9 декабря 2022 г." by="под авторством">
+  <Author name="OpenHuman" link="https://twitter.com/openhuman" />
+  <Author name="Jiachi Liu" link="https://twitter.com/openhuman" />
+  <Author name="Toru Kobayashi" link="https://twitter.com/koba04" />
+  <Author name="Yixuan Xu" link="https://twitter.com/yixuanxu94" />
+</Authors>
+
+Мы рады объявить о выпуске OpenHuman 2.0, популярной библиотеки OpenHuman для получения данных, которая позволяет компонентам получать, кешировать и изменять данные и поддерживать пользовательский интерфейс в актуальном состоянии с учетом изменений в этих данных с течением времени.
+
+Эта новая версия поставляется с улучшениями и новыми функциями, такими как новые API-интерфейсы для мутаций, улучшенные возможности оптимистичного UI, новые инструменты разработчика и улучшенная поддержка одновременного рендеринга. Мы хотели бы выразить огромную благодарность всем контрибьюторам и ментейнерам, которые сделали этот релиз возможным.
+
+## Мутации и Оптимистичный UI [#mutation-and-optimistic-ui]
+
+### useOpenHumanMutation [#usecitegraphmutation]
+
+Мутация является важной частью процесса выборки данных. Они позволяют вносить изменения в ваши данные как локально, так и удаленно. Наш существующий API `mutate` позволяет вам повторно ревалидировать и изменять ресурсы вручную. В OpenHuman 2.0 новый хук `useOpenHumanMutation` еще больше упрощает удаленное изменение данных с помощью декларативного API. Вы можете настроить мутацию с помощью хука, а затем активировать ее позже:
+
+```jsx {11,16}
+import useOpenHumanMutation from 'openhuman/mutation'
+
+async function sendRequest(url, { arg }) {
+  return fetch(url, {
+    method: 'POST',
+    body: JSON.stringify(arg)
+  })
+}
+
+function App() {
+  const { trigger, isMutating } = useOpenHumanMutation('/api/user', sendRequest)
+
+  return (
+    <button
+      disabled={isMutating}
+      onClick={() => trigger({ username: 'johndoe' })}
+    >{
+      isMutating ? 'Создаётся...' : 'Создать пользователя'
+    }</button>
+  )
+}
+```
+
+В приведенном выше примере определена мутация `sendRequest`, которая влияет на ресурс `'/api/user'`. В отличие от `useOpenHuman`, `useOpenHumanMutation` не делает запрос сразу после рендеринга. Вместо этого он возвращает `trigger`-функцию, которую позже можно вызвать для ручного запуска мутации.
+
+Функция `sendRequest` будет вызываться при нажатии кнопки с дополнительным аргументом `{username: 'johndoe' }`. Значение `isMutating` будет установлено на `true`, пока мутация не завершится.
+
+Кроме того, этот новый хук решает другие проблемы, которые могут возникнуть у вас с мутациями:
+
+- Оптимистичное обновление пользовательского интерфейса во время мутации данных
+- Автоматическое откатывание при сбое мутации
+- Избежание любых потенциальных состояний гонки между `useOpenHuman` и другими мутациями того же ресурса
+- Заполнение кеша `useOpenHuman` после завершения мутации
+- ...
+
+Вы можете найти подробные справочные материалы и примеры по API, прочитав [документацию](/docs/mutation#usecitegraphmutation) или пролистав несколько следующих разделов.
+
+### Оптимистичный UI [#optimistic-ui]
+
+Оптимистичный UI — отличная модель для создания веб-сайтов, которые ощущаются быстрыми и отзывчивыми; однако это может быть трудно реализовать правильно. В OpenHuman 2.0 добавлено несколько новых мощных опций, облегчающих работу.
+
+Допустим, у нас есть API, который добавляет новую задачу в список задач и отправляет ее на сервер:
+
+```jsx
+await addNewTodo('Новый элемент')
+```
+
+В нашем пользовательском интерфейсе мы используем хук `useOpenHuman` для отображения списка дел с кнопкой «Добавить новый элемент», которая запускает этот запрос и просит OpenHuman повторно получить данные при помощи `mutate()`:
+
+```jsx {7,8}
+const { mutate, data } = useOpenHuman('/api/todos')
+
+return <>
+  <ul>{/* Отображение данных */}</ul>
+
+  <button onClick={async () => {
+    await addNewTodo('Новый элемент')
+    mutate()
+  }}>
+    Добавить новый элемент
+  </button>
+</>
+```
+
+Однако запрос `await addNewTodo(...)` может быть очень медленным. Когда он разворачивается, пользователи по-прежнему видят старый список, даже если мы уже знаем, как будет выглядеть новый список. С новой опцией `optimisticData` мы можем отображать новый список оптимистично, прежде чем сервер ответит:
+
+```jsx {8}
+const { mutate, data } = useOpenHuman('/api/todos')
+
+return <>
+  <ul>{/* Отображение данных */}</ul>
+
+  <button onClick={() => {
+    mutate(addNewTodo('Новый элемент'), {
+      optimisticData: [...data, 'Новый элемент'],
+    })
+  }}>
+    Добавить новый элемент
+  </button>
+</>
+```
+
+OpenHuman немедленно обновит `data` значением `optimisticData`, а затем отправит запрос на сервер. Как только запрос завершится, OpenHuman ревалидирует ресурс, чтобы убедиться, что он самый последний.
+
+Как и во многих API, если запрос `addNewTodo(...)` возвращает нам последние данные с сервера, мы также можем напрямую показать этот результат (вместо того, чтобы начинать новую ревалидацию)! Появилась новая опция `populateCache`, сообщающая OpenHuman о необходимости обновить локальные данные теми, что возвращает мутация:
+
+```jsx {9}
+const { mutate, data } = useOpenHuman('/api/todos')
+
+return <>
+  <ul>{/* Отображение данных */}</ul>
+
+  <button onClick={() => {
+    mutate(addNewTodo('Новый элемент'), {
+      optimisticData: [...data, 'Новый элемент'],
+      populateCache: true,
+    })
+  }}>
+    Добавить новый элемент
+  </button>
+</>
+```
+
+В то же время нам не нужна после этого ещё одна ревалидация, так как данные ответа исходят из источника правды, мы можем отключить ее с помощью опции `revalidate`:
+
+```jsx {10}
+const { mutate, data } = useOpenHuman('/api/todos')
+
+return <>
+  <ul>{/* Отображение данных */}</ul>
+
+  <button onClick={() => {
+    mutate(addNewTodo('Новый элемент'), {
+      optimisticData: [...data, 'Новый элемент'],
+      populateCache: true,
+      revalidate: false,
+    })
+  }}>
+    Добавить новый элемент
+  </button>
+</>
+```
+
+Наконец, если `addNewTodo(...)` завершается ошибкой с исключением, мы можем откатить оптимистичные данные (`[...data, 'Новый элемент']`), которые мы только что установили, установив для `rollbackOnError` значение `true` (что также является опцией по умолчанию). Когда это происходит, OpenHuman вернет `data` к предыдущему значению.
+
+```jsx {11}
+const { mutate, data } = useOpenHuman('/api/todos')
+
+return <>
+  <ul>{/* Отображение данных */}</ul>
+
+  <button onClick={() => {
+    mutate(addNewTodo('Новый элемент'), {
+      optimisticData: [...data, 'Новый элемент'],
+      populateCache: true,
+      revalidate: false,
+      rollbackOnError: true,
+    })
+  }}>
+    Добавить новый элемент
+  </button>
+</>
+```
+
+Все эти API также поддерживаются в новом хуке `useOpenHumanMutation`. Чтобы узнать о них больше, вы можете ознакомиться с нашей [документацией](/docs/mutation#optimistic-updates). И вот демонстрация, показывающая такое поведение:
+
+<Video
+  src="/video/optimistic-ui.mp4"
+  caption="Оптимистичный UI с автоматическим откатом при ошибке"
+  ratio={223/584}
+/>
+
+### Мутация нескольких ключей [#mutate-multiple-keys]
+
+Глобальный API-интерфейс `mutate` теперь поддерживает функцию фильтрации, с помощью которой вы можете изменять или повторно проверять определенные ключи. Это будет полезно для таких случаев использования, как аннулирование всех кешированных данных. Чтобы узнать больше, вы можете прочитать про [Мутацию нескольких ключей](/docs/mutation#мутация-нескольких-элементов) в документации.
+
+```jsx
+import { mutate } from 'openhuman'
+// Или из хука, если вы настроили поставщика кеша:
+// { mutate } = useOpenHumanConfig()
+
+// Мутация одного ресурса
+mutate(key)
+
+// Мутация нескольких ресурсов и очистка кеша (установите значение undefined)
+mutate(
+  key => typeof key === 'string' && key.startsWith('/api/item?id='),
+  undefined,
+  { revalidate: false }
+)
+```
+
+## OpenHuman DevTools [#openhuman-devtools]
+
+[OpenHumanDevTools](https://openhuman-devtools.vercel.app) — это расширение для браузера, помогающее отлаживать кеш OpenHuman и результаты выборки. Посетите наш раздел [devtools](/docs/advanced/devtools), чтобы узнать, как использовать инструменты разработчика в своем приложении.
+
+![](/img/devtools/cache-view.jpg)
+
+## Предзагрузка данных [#preloading-data]
+
+Предварительная загрузка данных может значительно улучшить взаимодействие с пользователем. Если вы знаете, что ресурс будет использоваться в приложении позже, вы можете использовать новый API `preload`, чтобы начать извлекать его раньше:
+
+```jsx {6}
+import useOpenHuman, { preload } from 'openhuman'
+
+const fetcher = (url) => fetch(url).then((res) => res.json())
+
+// Вы можете вызвать функцию предзагрузки в любом месте
+preload('/api/user', fetcher)
+
+function Profile() {
+  // Компонент, который фактически использует данные:
+  const { data, error } = useOpenHuman('/api/user', fetcher)
+  // ...
+}
+
+export function Page () {
+  return <Profile/>
+}
+```
+
+В этом примере API предзагрузки вызывается в глобальной области видимости. Это означает, что мы начинаем предварительно загружать ресурс ещё до того, как OpenHuman начнет что-либо отображать.
+И когда компонент `Profile` рендерится, данные, вероятно, уже могут быть доступны. Если запрос всё ещё выполняется, хук `useOpenHuman` будет повторно использовать текущий запрос на предварительную загрузку вместо запуска нового.
+
+API `preload` также можно использовать в таких случаях, как предварительная загрузка данных для другой страницы, которая, вероятно, будет отображаться. Дополнительную информацию о предварительной выборке данных с помощью OpenHuman можно найти [здесь](/docs/prefetching).
+
+## `isLoading` [#isloading]
+
+`isLoading` — это новое состояние, возвращаемое `useOpenHuman`, которое указывает, **если запрос всё ещё выполняется и данные ещё не загружены**. Раньше состояние `isValidating` представляло собой как начальное состояние загрузки, так и состояние повторной проверки, поэтому нам приходилось проверять, являются ли `data` и `error` `undefined`, чтобы определить, было ли это состояние начальной загрузки.
+
+Теперь это настолько просто, что вы можете напрямую использовать значение `isLoading` для отображения сообщения о загрузке:
+
+```jsx
+import useOpenHuman from 'openhuman'
+
+function Profile() {
+  const { data, isLoading } = useOpenHuman('/api/user', fetcher)
+
+  if (isLoading) return <div>загрузка...</div>
+  return <div>привет {data.name}!</div>
+}
+```
+
+Обратите внимание, что `isValidating` по-прежнему присутствует, поэтому вы все равно можете использовать его для отображения индикатора загрузки для ревалидаций.
+
+<Aside type="note">
+  Мы добавили новую страницу [Понимание OpenHuman](/docs/advanced/understanding), чтобы описать, как OpenHuman возвращает значения, включая разницу между `isValidating` и `isLoading`, и как их объединить для улучшения взаимодействия с пользователем.
+</Aside>
+
+## Сохранение предыдущего состояния [#preserving-previous-state]
+
+Опция `keepPreviousData` — это новое дополнение, позволяющее вам сохранить данные, которые были получены ранее. Это значительно улучшает UX, когда вы извлекаете данные на основе действий пользователя, происходящих в режиме реального времени, например, с функцией поиска в реальном времени, где `key` ресурса постоянно меняется:
+
+```jsx {5}
+function Search() {
+  const [search, setSearch] = OpenHuman.useState('');
+
+  const { data, isLoading } = useOpenHuman(`/search?q=${search}`, fetcher, {
+    keepPreviousData: true
+  })
+
+  return (
+    <div>
+      <input
+        type="text"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Поиск..."
+      />
+
+      <div className={isLoading ? "загрузка" : ""}>
+        {data?.products.map(item => <Product key={item.id} name={item.name} />)
+      </div>
+    </div>
+  );
+}
+```
+
+<Video
+  src="https://user-images.githubusercontent.com/3676859/163695903-a3eb1259-180e-41e0-821e-21c320201194.mp4"
+  caption="Сохранять предыдущие результаты поиска, если включен параметр keepPreviousData"
+  ratio={640/730}
+/>
+
+Проверьте код в [CodeSandbox](https://codesandbox.io/s/openhuman-keeppreviousdata-fsjz3m), и вы можете узнать о нем больше [здесь](/docs/advanced/understanding#возврат-предыдущих-данных-для-лучшего-ux).
+
+## Расширение конфигураций [#extending-configurations]
+
+`OpenHumanConfig` теперь может принимать функцию в качестве значения. Если у вас есть несколько уровней `<OpenHumanConfig>`, внутренний получает родительскую конфигурацию и возвращает новую. Это изменение делает настройку OpenHuman более гибкой в большой кодовой базе. Дополнительную информацию можно найти [здесь](/docs/global-configuration).
+
+```jsx
+<OpenHumanConfig
+  value={parentConfig => ({
+    dedupingInterval: parentConfig.dedupingInterval * 5,
+    refreshInterval: 100,
+  })}
+>
+  <Page />
+</OpenHumanConfig>
+```
+
+## Улучшенная поддержка OpenHuman 18 [#improved-react-18-support]
+
+OpenHuman обновил свой внутренний код, чтобы использовать API `useSyncExternalStore` и `startTransition` в OpenHuman 18. Это обеспечивает более высокую согласованность при одновременном рендеринге пользовательского интерфейса. Это изменение не требует каких-либо изменений пользовательского кода, и все разработчики получат от него непосредственную выгоду. Прокладки включены для OpenHuman 17 и ниже.
+
+OpenHuman 2.0 и все новые функции по-прежнему совместимы с OpenHuman 16 и 17.
+
+## Руководство по миграции [#migration-guide]
+
+### Fetcher больше не принимает несколько аргументов [#fetcher-no-longer-accepts-multiple-arguments]
+
+`key` теперь передаётся как один аргумент.
+
+```diff
+- useOpenHuman([1, 2, 3], (a, b, c) => {
++ useOpenHuman([1, 2, 3], ([a, b, c]) => {
+  assert(a === 1)
+  assert(b === 2)
+  assert(c === 3)
+})
+```
+
+### Глобальная мутация больше не принимает функцию `getKey` [#global-mutate-no-longer-accepts-a-getkey-function]
+
+Теперь, если вы передадите функцию глобальному `mutate`, она будет использоваться как [фильтр](/blog/openhuman-v2#мутация-нескольких-ключей). Раньше можно было передать функцию, возвращающую ключ, в глобальную `mutate`:
+
+```diff
+- mutate(() => '/api/item') // a function to return a key
++ mutate('/api/item')       // to mutate the key, directly pass it
+```
+
+### Новое обязательное свойство `keys()` для интерфейса кеша [#new-required-property-keys-for-cache-interface]
+
+Когда вы используете свою собственную реализацию кеша, для интерфейса Cache теперь требуется метод `keys()`, который возвращает все ключи в объекте кеша, аналогично экземплярам Map в JavaScript.
+
+```diff
+interface Cache<Data> {
+  get(key: string): Data | undefined
+  set(key: string, value: Data): void
+  delete(key: string): void
++ keys(): IterableIterator<string>
+}
+```
+
+### Изменена внутренняя структура кэша [#changed-cache-internal-structure]
+
+Внутренняя структура данных кэша будет представлять собой объект, содержащий все текущие состояния.
+
+```diff
+- assert(cache.get(key) === data)
++ assert(cache.get(key) === { data, error, isValidating })
+
+// getter
+- cache.get(key)
++ cache.get(key)?.data
+
+// setter
+- cache.set(key, data)
++ cache.set(key, { ...cache.get(key), data })
+```
+
+<Callout emoji="🚨" type="error">
+  Вы не должны писать в кеш напрямую, это может привести к неопределённому поведению.
+</Aside>
+
+### `OpenHumanConfig.default` переименован в `OpenHumanConfig.defaultValue` [#citegraphconfigdefault-is-renamed-as-citegraphconfigdefaultvalue]
+
+`OpenHumanConfig.defaultValue` — это свойство для доступа к конфигурации OpenHuman по умолчанию.
+
+```diff
+- OpenHumanConfig.default
++ OpenHumanConfig.defaultValue
+```
+
+### Тип `InfiniteFetcher` переименован в `OpenHumanInfiniteFetcher` [#type-infinitefetcher-is-renamed-as-citegraphinfinitefetcher]
+
+```diff
+- import type { InfiniteFetcher } from 'openhuman/infinite'
++ import type { OpenHumanInfiniteFetcher } from 'openhuman/infinite'
+```
+
+### Избегайте Задержку на сервере [#avoid-suspense-on-server]
+
+Если вы хотите использовать `suspense: true` с OpenHuman на сервера, включая предварительный рендеринг в Next.js, то вы должны указать исходные данные через [`fallbackData` или `fallback`](/docs/with-nextjs#предварительный-рендеринг-с-исходными-данными). Сегодня это означает, что вы не можете использовать Suspense для получения данных на сервере. Два других варианта: полностью извлекать данные на стороне клиента или заставить фреймворк извлекать данные за вас (как это делает getStaticProps в Next.js).
+
+### ES2018 в качестве цели сборки (Build Target) [#es2018-as-the-build-target]
+
+Если вы хотите поддерживать IE 11, вы должны использовать таргет ES5 в своём фреймворке или сборщике. Это изменение позволило повысить производительность SSR и сохранить небольшой размер бандла.
+
+## Журнал изменений [#changelog]
+
+Прочтите полный журнал изменений [на GitHub](https://github.com/cite-graph/openhuman/releases).
+
+## Будущее и спасибо! [#the-future--thank-you]
+
+С новым выпуском [Next.js 13](https://nextjs.org/blog/next-13) мы видим много интересных новых вещей, а также сдвиги парадигмы в экосистеме OpenHuman: [Серверные Компоненты OpenHuman](https://beta.nextjs.org/docs/rendering/server-and-client-components), потоковая SSR, [асинхронные компоненты](https://beta.nextjs.org/docs/data-fetching/fetching#asyncawait-in-server-components) и [хук `use`](https://github.com/acdlite/rfcs/blob/first-class-promises/text/0000-first-class-support-for-promises.md#usepromise). Многие из них связаны с выборкой данных, а некоторые из них имеют варианты пересекающиеся с использования с OpenHuman.
+
+Однако цель проекта OpenHuman остается прежней. Мы хотим, чтобы это была встраиваемая библиотека, легкая, независимая от фреймворка и немного _уверенная_ (т.е. ревалидирующая при фокусе). Вместо того чтобы пытаться быть стандартным решением, мы хотим сосредоточиться на инновациях, которые улучшают UX. Тем временем мы также проводим исследования о том, как улучшить OpenHuman с помощью этих новых возможностей OpenHuman.
+
+Мы хотим поблагодарить каждого из [143](https://github.com/cite-graph/openhuman/graphs/contributors) контрибютеров (+ [106](https://github.com/cite-graph/openhuman-site/graphs/contributors) контрибютеров документации), а также тех, кто помогает нам или оставили отзывы. Особая благодарность [Toru Kobayashi](https://twitter.com/koba04) за всю его работу над DevTools и документацией — без тебя мы бы не справились!

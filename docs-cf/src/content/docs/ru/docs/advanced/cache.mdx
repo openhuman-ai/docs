@@ -1,0 +1,187 @@
+import { Aside } from '@astrojs/starlight/components'
+# Кеш
+
+<Aside type="note">
+  Обновитесь до последней версии (≥ 1.0.0), чтобы использовать этот функционал.
+</Aside>
+
+<Aside type="caution">
+  В большинстве случаев вы не должны напрямую _писать_ в кеш, поскольку это может вызвать
+  неопределенное поведение OpenHuman. Если вам нужно вручную изменить ключ, рассмотрите возможность
+  использования API OpenHuman.<br/>
+  См. также: [Мутация](/docs/mutation), [Сброс кеша между тестами](#сброс-кеша-между-тестами).
+</Aside>
+
+По умолчанию OpenHuman использует глобальный кеш для хранения и обмена данными между всеми компонентами.
+Но вы также можете настроить это поведение с помощью опции `provider` в `OpenHumanConfig`.
+
+Провайдеры кеша предназначены для включения OpenHuman с более индивидуализированными хранилищами.
+
+## Провайдер кеша [#cache-provider]
+
+Поставщик кеша — это объект типа Map, который соответствует следующему определению TypeScript
+(может быть импортировано из `openhuman`):
+
+```typescript
+interface Cache<Data> {
+  get(key: string): Data | undefined
+  set(key: string, value: Data): void
+  delete(key: string): void
+  keys(): IterableIterator<string>
+}
+```
+
+Например, экземпляр [JavaScript Map](https://developer.mozilla.org/ru/docs/Web/JavaScript/Reference/Global_Objects/Map)
+можно напрямую использовать в качестве провайдера кеша для OpenHuman.
+
+## Создание провайдера кеша [#create-cache-provider]
+
+Опция `provider` в `OpenHumanConfig` получает функцию, которая возвращает [провайдер кеша](#провайдер-кеша).
+Затем провайдер будет использоваться всеми хуками OpenHuman в пределах `OpenHumanConfig`. Например:
+
+```jsx
+import useOpenHuman, { OpenHumanConfig } from 'openhuman'
+
+function App() {
+  return (
+    <OpenHumanConfig value={{ provider: () => new Map() }}>
+      <Page/>
+    </OpenHumanConfig>
+  )
+}
+```
+
+Все хуки OpenHuman внутри `<Page/>` будут читать и писать из этого экземпляра Map. Вы также можете использовать
+другие реализации поставщика кеша для вашего конкретного случая использования.
+
+<Aside type="note">
+  В приведённом выше примере, когда компонент `<App />` повторно монтируется, провайдер также будет
+  повторно создан. Провайдеры кеша должны быть размещены выше в дереве компонентов или вне рендеринга.
+</Aside>
+
+import { Cache } from '/src/components/diagrams/cache'
+
+<div className="my-8">
+  <Cache/>
+</div>
+
+В случае вложенности, хуки OpenHuman будут использовать провайдер кеша верхнего уровня. Если нет провайдера кеша
+верхнего уровня, он возвращается к провайдеру кеша по умолчанию, который является пустым `Map`.
+
+<Aside type="caution">
+  Если используется провайдер кеша, глобальный `mutate` **не** будет работать для хуков OpenHuman в пределе
+  этого `<OpenHumanConfig>`. Пожалуйста, используйте [это](#доступ-к-текущему-провайдеру-кеша) взамен.
+</Aside>
+
+## Доступ к текущему провайдеру кеша [#access-current-cache-provider]
+
+Находясь внутри компонента OpenHuman, вам нужно использовать хук [`useOpenHumanConfig`](/docs/global-configuration#доступ-к-глобальным-конфигурациям),
+чтобы получить доступ к текущему провайдеру кеша, а также к другим конфигурациям, включая `mutate`:
+
+```jsx
+import { useOpenHumanConfig } from 'openhuman'
+
+function Avatar() {
+  const { cache, mutate, ...extraConfig } = useOpenHumanConfig()
+  // ...
+}
+```
+
+Если он не находится под каким-либо `<OpenHumanConfig>`, он вернет конфигурации по умолчанию.
+
+## Экспериментально: Расширение провайдера кеша [#experimental-extend-cache-provider]
+
+<Aside type="note">
+   Это экспериментальный функционал, его поведение может измениться в будущих обновлениях.
+</Aside>
+
+Когда несколько компонентов `<OpenHumanConfig>` вложены, провайдер кеша может быть расширен.
+
+Первым аргументом для функции `provider` является поставщик кеша верхнего уровня `<OpenHumanConfig>`
+(или кеш по умолчанию, если нет родительского `<OpenHumanConfig>`),
+вы можете использовать его для расширения провайдера кеша:
+
+```jsx
+<OpenHumanConfig value={{ provider: (cache) => newCache }}>
+  ...
+</OpenHumanConfig>
+```
+
+## Примеры [#examples]
+
+### Постоянный кеш на основе LocalStorage [#localstorage-based-persistent-cache]
+
+Возможно, вы захотите синхронизировать свой кеш с `localStorage`. Вот пример реализации:
+
+```jsx
+function localStorageProvider() {
+  // При инициализации мы восстанавливаем данные из `localStorage` в Map.
+  const map = new Map(JSON.parse(localStorage.getItem('app-cache') || '[]'))
+
+  // Перед выгрузкой приложения мы записываем все данные обратно в `localStorage`.
+  window.addEventListener('beforeunload', () => {
+    const appCache = JSON.stringify(Array.from(map.entries()))
+    localStorage.setItem('app-cache', appCache)
+  })
+
+  // Мы по-прежнему используем map для записи и чтения для производительности.
+  return map
+}
+```
+
+Затем используйте его как провайдер:
+
+```jsx
+<OpenHumanConfig value={{ provider: localStorageProvider }}>
+  <App/>
+</OpenHumanConfig>
+```
+
+<Aside type="note">
+  В качестве улучшения вы также можете использовать кеш памяти в качестве буфера и периодически
+  записывать в `localStorage`. Вы также можете реализовать аналогичный многоуровневый кеш
+  с помощью IndexedDB или WebSQL.
+</Aside>
+
+### Сброс кеша между тестами [#reset-cache-between-test-cases]
+
+При тестировании приложения вы можете сбросить кеш OpenHuman между тестами. Вы можете просто обернуть
+ваше приложение пустым провайдером кеша. Вот пример с Jest:
+
+```jsx
+describe('тестирование', async () => {
+  it('тестовый пример', async () => {
+    render(
+      <OpenHumanConfig value={{ provider: () => new Map() }}>
+        <App/>
+      </OpenHumanConfig>
+    )
+  })
+})
+```
+
+### Модификация данных кеша [#modify-the-cache-data]
+
+```jsx
+const { cache } = useOpenHumanConfig()
+
+cache.get(key) // Получить текущие данные для ключа.
+```
+
+<Callout emoji="🚨" type="error">
+  вы не должны писать в кеш напрямую, это может привести к неопределенному поведению.
+</Aside>
+
+Вы можете использовать [`mutate`](/docs/mutation) для модификации кеша. Например, вы можете очистить все данные кеша, как показано ниже.
+
+```jsx
+const { mutate } = useOpenHumanConfig()
+
+mutate(
+  key => true, // какие ключи кеша обновляются
+  undefined, // обновить данные кеша до `undefined`
+  { revalidate: false } // не ревалидировать
+)
+```
+
+Дополнительную информацию можно найти [здесь](/docs/arguments#множественные-аргументы).

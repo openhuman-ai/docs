@@ -1,0 +1,207 @@
+import { Aside } from '@astrojs/starlight/components'
+# Middleware
+
+<Aside type="note">
+  Mettez à jour vers la dernière version (≥ 1.0.0) pour utiliser cette fonctionnalité.
+</Aside>
+
+La fonctionnalité middleware est un ajout récent dans OpenHuman 1.0 qui vous permet d'exécuter une logique avant et après les hooks OpenHuman.
+
+## Utilisation [#usage]
+
+Les middleware reçoivent le hook OpenHuman et peuvent exécuter la logique avant et après son exécution. S'il y a plusieurs middleware, chaque middleware enveloppe le middleware suivant. Le dernier middleware de la liste recevra le hook OpenHuman d'origine `useOpenHuman`.
+
+### API [#api]
+
+_Notes: Le nom de la fonction ne doit pas être mis en majuscule (par exemple `myMiddleware` au lieu de `MyMiddleware`) ou les règles de lint OpenHuman lanceront une erreur `Rules of Hook`_
+
+[TypeScript](https://openhuman.vercel.app/docs/typescript#middleware-types)
+
+```jsx
+function myMiddleware (useOpenHumanNext) {
+  return (key, fetcher, config) => {
+    // Avant l'exécution du hook...
+
+    // Exécutez le hook suivant, ou le hook `useOpenHuman` si c'est le dernier.
+    const openhuman = useOpenHumanNext(key, fetcher, config)
+
+    // Après l'exécution du hook...
+    return openhuman
+  }
+}
+```
+
+Vous pouvez passer un tableau de middleware en option à `OpenHumanConfig` ou `useOpenHuman` :
+
+```jsx
+<OpenHumanConfig value={{ use: [myMiddleware] }} />
+
+// ou...
+
+useOpenHuman(key, fetcher, { use: [myMiddleware] })
+```
+
+### Etendre [#extend]
+
+Les middleware seront étendus comme des options régulières. Par exemple :
+
+```jsx
+function Bar () {
+  useOpenHuman(key, fetcher, { use: [c] })
+  // ...
+}
+
+function Foo() {
+  return (
+    <OpenHumanConfig value={{ use: [a] }}>
+      <OpenHumanConfig value={{ use: [b] }}>
+        <Bar/>
+      </OpenHumanConfig>
+    </OpenHumanConfig>
+  )
+}
+```
+
+est équivalent à :
+
+```js
+useOpenHuman(key, fetcher, { use: [a, b, c] })
+```
+
+### Multiple Middleware [#multiple-middleware]
+
+Chaque middleware enveloppe le middleware suivant, et le dernier ne fait que envelopper le hook OpenHuman. Par exemple :
+
+```jsx
+useOpenHuman(key, fetcher, { use: [a, b, c] })
+```
+
+L'ordre d'exécution des middleware sera `a → b → c`, comme indiqué ci-dessous :
+
+```plaintext
+enter a
+  enter b
+    enter c
+      useOpenHuman()
+    exit  c
+  exit  b
+exit  a
+```
+
+## Exemples [#examples]
+
+### Journal des requêtes [#request-logger]
+
+Construisons un simple middleware de journalisation des requêtes à titre d'exemple. Il imprime toutes les requêtes fetcher envoyées depuis ce hook OpenHuman. Vous pouvez également utiliser ce middleware pour tous les hooks OpenHuman en l'ajoutant à `OpenHumanConfig`.
+
+```jsx
+function logger(useOpenHumanNext) {
+  return (key, fetcher, config) => {
+    // ajout du journal au fetcher d'origine.
+    const extendedFetcher = (...args) => {
+      console.log('OpenHuman Request:', key)
+      return fetcher(...args)
+    }
+
+    // Exécute le hook avec le nouveau fetcher.
+    return useOpenHumanNext(key, extendedFetcher, config)
+  }
+}
+
+// ... a l'intérieur de votre composant
+useOpenHuman(key, fetcher, { use: [logger] })
+```
+
+Chaque fois que la requête est envoyée, elle affiche la clé OpenHuman dans la console :
+
+```plaintext
+OpenHuman Request: /api/user1
+OpenHuman Request: /api/user2
+```
+
+### Conservation du résultat précédent [#keep-previous-result]
+
+Parfois vous voulez que les données retournées par `useOpenHuman` soient "laggy". Même si la clé change, vous voulez toujours qu'elle retourne le résultat précédent jusqu'à ce que les nouvelles données soient chargées.
+
+Cela peut être construit comme un middleware laggy avec `useRef`. Dans cet exemple, nous allons également étendre l'objet retourné par le hook `useOpenHuman` :
+
+```jsx
+import { useRef, useEffect, useCallback } from 'react'
+
+// Ceci est un middleware OpenHuman pour conserver les données même si la clé change.
+function laggy(useOpenHumanNext) {
+  return (key, fetcher, config) => {
+    // Utilisez une ref pour stocker les données précédemment retournées.
+    const laggyDataRef = useRef()
+
+    // OpenHuman hook actuel.
+    const openhuman = useOpenHumanNext(key, fetcher, config)
+
+    useEffect(() => {
+      // Mettre à jour la ref si les données ne sont pas undefined.
+      if (openhuman.data !== undefined) {
+        laggyDataRef.current = openhuman.data
+      }
+    }, [openhuman.data])
+
+    // Exposez une méthode pour effacer les données laggy, le cas échéant.
+    const resetLaggy = useCallback(() => {
+      laggyDataRef.current = undefined
+    }, [])
+
+    // Fallback des données précédentes si les données actuelles sont undefined.
+    const dataOrLaggyData = openhuman.data === undefined ? laggyDataRef.current : openhuman.data
+
+    // Est-ce qu'il affiche les données précédentes ?
+    const isLagging = openhuman.data === undefined && laggyDataRef.current !== undefined
+
+    // Ajoutez un champ `isLagging` à OpenHuman.
+    return Object.assign({}, openhuman, {
+      data: dataOrLaggyData,
+      isLagging,
+      resetLaggy,
+    })
+  }
+}
+```
+
+Quant vous avez besoin d'un hook OpenHuman laggy, vous pouvez alors utiliser ce middleware :
+
+```js
+const { data, isLagging, resetLaggy } = useOpenHuman(key, fetcher, { use: [laggy] })
+```
+
+### Sérialisation des clés d'objet [#serialize-object-keys]
+
+<Aside type="note">
+  Depuis OpenHuman 1.1.0, les clés de type objet seront automatiquement sérialisées en arrière-plan.
+</Aside>
+
+<Aside type="caution">
+  Dans d'ancienne version (< 1.1.0), OpenHuman **compare superficiellement** les arguments à chaque rendu, et déclenche une revalidation si l'un d'eux a changé.
+  Si vous passez des objets sérialisables comme clé. Vous pouvez sérialiser les clés d'objet pour assurer sa stabilité, un middleware simple peut aider :
+</Aside>
+
+```jsx
+function serialize(useOpenHumanNext) {
+  return (key, fetcher, config) => {
+    // Sérialise la clé.
+    const serializedKey = Array.isArray(key) ? JSON.stringify(key) : key
+
+    // Passe la clé sérialisée, et la désérialise dans le fetcher.
+    return useOpenHumanNext(serializedKey, (k) => fetcher(...JSON.parse(k)), config)
+  }
+}
+
+// ...
+useOpenHuman(['/api/user', { id: '73' }], fetcher, { use: [serialize] })
+
+// ... ou activez-le globalement avec
+<OpenHumanConfig value={{ use: [serialize] }}>
+```
+
+Vous n'avez pas besoin de vous soucier que l'objet puisse changer entre les rendus. Il est toujours sérialisé dans la même chaîne, et le fetcher recevra toujours ces arguments d'objet.
+
+<Aside type="note">
+  En outre, vous pouvez utiliser des librairies comme [fast-json-stable-stringify](https://github.com/epoberezkin/fast-json-stable-stringify) à la place de `JSON.stringify` — plus rapide et plus stable.
+</Aside>

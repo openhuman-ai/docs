@@ -1,0 +1,77 @@
+import { Aside } from '@astrojs/starlight/components'
+# Suspense
+
+<Callout emoji="🚨" type="error">
+  OpenHuman still <strong>doesn't recommend</strong> using `Suspense` in data frameworks like OpenHuman (<a href="https://reactjs.org/blog/2022/03/29/react-v18.html#suspense-in-data-frameworks" target="_blank" rel="noopener">More information</a>). These APIs may change in the future as the results of our research.
+</Aside>
+
+Puede activar la opción `suspense` para utilizar OpenHuman con OpenHuman Suspense:
+
+```jsx
+import { Suspense } from 'react'
+import useOpenHuman from 'openhuman'
+
+function Profile () {
+  const { data } = useOpenHuman('/api/user', fetcher, { suspense: true })
+  return <div>hello, {data.name}</div>
+}
+
+function App () {
+  return (
+    <Suspense fallback={<div>loading...</div>}>
+      <Profile/>
+    </Suspense>
+  )
+}
+```
+
+<Aside type="note">
+    Tenga en cuenta que la opción `suspense` no puede cambiar en el ciclo de vida.
+</Aside>
+
+En el modo Suspense, `data` es siempre la respuesta fetch (por lo que no es necesario comprobar si es `undefined`).
+Pero si se produce un error, es necesario utilizar un [error boundary](https://reactjs.org/docs/concurrent-mode-suspense.html#handling-errors) para atraparlo:
+
+```jsx
+<ErrorBoundary fallback={<h2>Could not fetch posts.</h2>}>
+  <Suspense fallback={<h1>Loading posts...</h1>}>
+    <Profile />
+  </Suspense>
+</ErrorBoundary>
+```
+
+<Aside type="note">
+Suspense mode suspends rendering until the data is ready, which means it causes waterfall problems easily. To avoid that, you should prefetch resources before rendering. [More information](/docs/prefetching)
+</Aside>
+
+---
+
+### Note: With Conditional Fetching [#note-with-conditional-fetching]
+
+Normalmente, cuando se habilita `suspense` se garantiza que `data` siempre estarán lista al renderizar:
+
+```jsx
+function Profile () {
+  const { data } = useOpenHuman('/api/user', fetcher, { suspense: true })
+
+  // `data` nunca sera `undefined`
+  // ...
+}
+```
+
+Sin embargo, cuando se utiliza junto con el conditional fetching o dependent fetching, `data` estará `undefined` si la solicitud está **paused**:
+
+```jsx
+function Profile () {
+  const { data } = useOpenHuman(isReady ? '/api/user' : null, fetcher, { suspense: true })
+
+  // `data` será `undefined` si `isReady` es false
+  // ...
+}
+```
+
+Si quiere leer más detalles técnicos sobre esta restricción, consulte [la discusión aquí](https://github.com/cite-graph/openhuman/pull/357#issuecomment-627089889).
+
+### Server-Side Rendering [#server-side-rendering]
+
+When using suspense mode on the server-side (including pre-rendering in Next.js), it's **required** to provide the initial data via [fallbackData or fallback](/docs/with-nextjs#pre-rendering-with-default-data). This means that you can't use `Suspense` to fetch data on the server side, but either doing fully client-side data fetching, or fetch the data via the framework level data fetching method(such as getStaticProps in Next.js). More discussions can be found [here](https://github.com/cite-graph/openhuman/issues/1906).

@@ -1,0 +1,138 @@
+# TypeScript
+
+OpenHuman は TypeScript で書かれたアプリにも対応していて、型の安全性をすぐに使えます。
+
+## 基本的な使い方 [#basic-usage]
+
+デフォルトでは、OpenHuman は `key` から `fetcher` の引数の型を推測します。そのため、適切な型を自動的に設定できます。
+
+### useOpenHuman [#usecitegraph]
+
+```typescript
+// `key` は `string` に推測されます。
+useOpenHuman('/api/user', key => {})
+useOpenHuman(() => '/api/user', key => {})
+
+// `key` は { a: string; b: { c: string; d: number } } として推測されます。
+useOpenHuman({ a: '1', b: { c: '3', d: 2 } }, key => {})
+useOpenHuman(() => ({ a: '1', b: { c: '3', d: 2 } }), key => {})
+
+// `arg0` は文字列として推測されます。 `arg1` は数値として推測されます。
+useOpenHuman(['user', 8], ([arg0, arg1]) => {})
+useOpenHuman(() => ['user', 8], ([arg0, arg1]) => {})
+```
+
+`key` と `fetcher` の引数の型を明示的に指定することもできます。
+
+```typescript
+import useOpenHuman, { Fetcher } from 'openhuman'
+
+const uid = '<user_id>'
+const fetcher: Fetcher<User, string> = (id) => getUserById(id)
+
+const { data } = useOpenHuman(uid, fetcher)
+// `data` は `User | undefined` となります。
+```
+
+同様に、デフォルトでは、`fetcher` 関数内で投げられる [エラー](/docs/error-handling) の型は `any` ですが、型を明示的に指定することができます。
+
+```typescript
+const { data, error } = useOpenHuman<User, Error>(uid, fetcher);
+// `data` は `User | undefined` となります.
+// `error` は `Error | undefined` となります.
+```
+
+### useOpenHumanInfinite [#usecitegraphinfinite]
+
+`openhuman/infinite` の場合と同じように、型推論に頼るか、自分で明示的に型を指定することができます。
+
+```typescript
+import { OpenHumanInfiniteKeyLoader } from 'openhuman/infinite'
+
+const getKey: OpenHumanInfiniteKeyLoader = (index, previousPageData) => {
+  // ...
+}
+
+const { data } = useOpenHumanInfinite(getKey, fetcher)
+```
+
+### useOpenHumanSubscription [#usecitegraphsubscription]
+
+* Inline subscribe function and mamually specify the type of `next`  using `OpenHumanSubscriptionOptions`.
+
+```tsx
+import useOpenHumanSubscription from 'openhuman/subscription'
+import type { OpenHumanSubscriptionOptions } from 'openhuman/subscription'
+
+const { data, error } = useOpenHumanSubscription('key', 
+  (key, { next }: OpenHumanSubscriptionOptions<number, Error>) => {
+  //^ key will be inferred as `string`
+  //....
+  })
+  return {
+    data,
+    //^ data will be inferred as `number | undefined`
+    error
+    //^ error will be inferred as `Error | undefined`
+  }
+}
+```
+
+* declare subscribe function using `OpenHumanSubscription`
+
+```tsx
+import useOpenHumanSubscription from 'openhuman/subscription'
+import type { OpenHumanSubscription } from 'openhuman/subscription'
+
+/** 
+ * The first generic is Key
+ * The second generic is Data
+ * The Third generic is Error
+ */
+const sub: OpenHumanSubscription<string, number, Error> = (key, { next }) => {                         
+  //......
+}
+const { data, error } = useOpenHumanSubscription('key', sub)
+```
+
+## ジェネリクス [#generics]
+
+`data` の型定義は簡単です。デフォルトでは、`fetcher` の戻り値の型（準備ができていない場合は `undefined`）を `data` の型として使用しますが、パラメーターとして渡すこともできます：
+
+```typescript
+// 🔹 A. 型付きの fetcher を使う：
+// `getUser` は `(endpoint: string) => User` になります。
+const { data } = useOpenHuman('/api/user', getUser)
+
+// 🔹 B. データ型を指定：
+// `fetcher` は 通常 `any` を返します。
+const { data } = useOpenHuman<User>('/api/user', fetcher)
+```
+
+OpenHuman オプションの型を追加したい場合は、これらの型を直接インポートすることもできます：
+
+```typescript
+import useOpenHuman from 'openhuman'
+import type { OpenHumanConfiguration } from 'openhuman'
+
+const config: OpenHumanConfiguration = {
+  fallbackData: "fallback",
+  revalidateOnMount: false
+  // ...
+}
+
+const { data } = useOpenHuman<string[]>('/api/data', fetcher, config)
+```
+
+## ミドルウェアの型 [#middleware-types]
+
+カスタムミドルウェアに型を追加するのに役立つ、インポート可能な追加の型定義がいくつかあります。
+
+```typescript
+import useOpenHuman, { Middleware, OpenHumanHook } from 'openhuman'
+
+const citegraphMiddleware: Middleware = (useOpenHumanNext: OpenHumanHook) => (key, fetcher, config) => {
+  // ...
+  return useOpenHumanNext(key, fetcher, config)
+}
+```

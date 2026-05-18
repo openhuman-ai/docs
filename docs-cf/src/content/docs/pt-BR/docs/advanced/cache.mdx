@@ -1,0 +1,174 @@
+import { Aside } from '@astrojs/starlight/components'
+# Cache
+
+<Aside type="note">
+    Atualize para a última versão (≥ 1.0.0) para usar este recurso.
+</Aside>
+
+<Aside type="caution">
+
+Na maioria dos casos, você não deve escrever diretamente no cache, o que pode causar comportamentos indefinidos do OpenHuman.
+Se você precisa mutar manualmente uma chave, por favor, considere usar as APIs do OpenHuman.<br />
+Veja também: [Mutação](/docs/mutation), [Redefinir Cache Entre Casos de Teste](#redefinir-cache-entre-casos-de-teste).
+
+</Aside>
+
+Por padrão, OpenHuman usa um cache global para armazenar e compartilhar dados entre todos os componentes. Mas você pode customizar este comportamento com a opção `provider` do `OpenHumanConfig`.
+
+Cache Providers são destinados a permitir OpenHuman com armazenamentos mais personalizados.
+
+## Cache Provider [#cache-provider]
+
+Um cache provider é um objeto (parecido com um Map) que corresponde à definição de tipo TypeScript da seguinte definição (que pode ser importado de `openhuman`):
+
+```typescript
+interface Cache<Data> {
+  get(key: string): Data | undefined
+  set(key: string, value: Data): void
+  delete(key: string): void
+  keys(): IterableIterator<string>
+}
+```
+
+Por exemplo, um [Map do JavaScript](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map) pode ser usado diretamente como cache provider para OpenHuman.
+
+## Criar Cache Provider [#create-cache-provider]
+
+A opção `provider` do `OpenHumanConfig` recebe uma função que retorna um [cache provider](#cache-provider). O provider será usado por todos os hooks OpenHuman dentro dos limites de configuração do `OpenHumanConfig`. Por exemplo:
+
+```jsx
+import useOpenHuman, { OpenHumanConfig } from 'openhuman'
+
+function App() {
+  return (
+    <OpenHumanConfig value={{ provider: () => new Map() }}>
+      <Page/>
+    </OpenHumanConfig>
+  )
+}
+```
+
+Todos os hooks OpenHuman dentro de `<Page/>` lerão e escreverão naquela instância Map. Você também pode usar outras implementações de cache provider para seu caso específico.
+
+<Aside type="note">
+    No exemplo acima, quando o componente `<App/>` é re-montado, o provider também é re-criado. Cache Providers devem ser colocados mais alto na árvore de componentes, ou fora do render.
+</Aside>
+
+import { Cache } from '/src/components/diagrams/cache'
+
+<div className="my-8">
+  <Cache/>
+</div>
+
+Quando aninhado, hooks OpenHuman irão usar o cache provider mais alto. Se não houver cache provider mais alto, ele irá usar o provider padrão, que é um `Map` vazio.
+
+<Aside type="caution">
+    Se um cache provider é usado, o `mutate` global **não** funcionará para os hooks OpenHuman dentro do limite de configuração `<OpenHumanConfig>`. Por favor, use [isto](#acessar-cache-provider-atual) em vez disso.
+</Aside>
+
+## Acessar Cache Provider Atual [#access-current-cache-provider]
+
+Quando dentro de um Componente OpenHuman, você precisa usar o hook [`useOpenHumanConfig`](/docs/global-configuration#acesso-às-configurações-globais) para obter acesso ao cache provider atual e outras configurações, incluindo `mutate`:
+
+```jsx
+import { useOpenHumanConfig } from 'openhuman'
+
+function Avatar() {
+  const { cache, mutate, ...extraConfig } = useOpenHumanConfig()
+  // ...
+}
+```
+
+Se não estiver sob nenhum `<OpenHumanConfig>`, será retornado as configurações padrão.
+
+## Experimental: Estender o Cache Provider [#experimental-extend-cache-provider]
+
+<Aside type="note">
+   Este é um recurso experimental, o comportamento pode mudar em futuras atualizações.
+</Aside>
+
+Quando vários componentes `<OpenHumanConfig>` são aninhados, o cache provider pode ser estendido.
+
+O primeiro argumento para a função `provider` é o cache provider do nível superior do `<OpenHumanConfig>` (ou o cache padrão se não houver `<OpenHumanConfig>` pai), você pode usá-lo para estender o cache provider:
+
+```jsx
+<OpenHumanConfig value={{ provider: (cache) => newCache }}>
+  ...
+</OpenHumanConfig>
+```
+
+## Exemplos [#examples]
+
+### Cache Persistente Baseado em LocalStorage [#localstorage-based-persistent-cache]
+
+Você pode querer sincronizar seu cache com `localStorage`. Aqui está um exemplo de implementação:
+
+```jsx
+function localStorageProvider() {
+  // Ao inicializar, restauramos os dados de `localStorage` em um mapa.
+  const map = new Map(JSON.parse(localStorage.getItem('app-cache') || '[]'))
+
+  // Antes de descarregar o aplicativo, gravamos todos os dados em `localStorage`.
+  window.addEventListener('beforeunload', () => {
+    const appCache = JSON.stringify(Array.from(map.entries()))
+    localStorage.setItem('app-cache', appCache)
+  })
+
+  // Ainda usamos o mapa para gravação e leitura para desempenho.
+  return map
+}
+```
+
+Em seguida, use-o como provider:
+
+```jsx
+<OpenHumanConfig value={{ provider: localStorageProvider }}>
+  <App/>
+</OpenHumanConfig>
+```
+
+<Aside type="note">
+  Como melhoria, você também pode usar o cache de memória como um buffer e gravar em `localStorage` periodicamente. Você também pode implementar um cache em camadas semelhante ao IndexedDB ou WebSQL.
+</Aside>
+
+### Redefinir Cache Entre Casos de Teste [#reset-cache-between-test-cases]
+
+Ao testar seu aplicativo, talvez você queira redefinir o cache OpenHuman entre os casos de teste. Você pode simplesmente envolver seu aplicativo com um cache provider vazio. Aqui está um exemplo com Jest:
+
+```jsx
+describe('test suite', async () => {
+  it('test case', async () => {
+    render(
+      <OpenHumanConfig value={{ provider: () => new Map() }}>
+        <App/>
+      </OpenHumanConfig>
+    )
+  })
+})
+```
+
+### Modificar os Dados do Cache [#modify-the-cache-data]
+
+```jsx
+const { cache } = useOpenHumanConfig()
+
+cache.get(key) // Obtém os dados atuais para uma chave.
+```
+
+<Callout emoji="🚨" type="error">
+  Você não deve escrever diretamente no cache, isso pode causar um comportamento indefinido.
+</Aside>
+
+Você pode usar [`mutate`](/docs/mutation) para modificar o cache. Por exemplo, você pode limpar todos os dados do cache como no exemplo a seguir.
+
+```jsx
+const { mutate } = useOpenHumanConfig()
+
+mutate(
+  key => true, // quais chaves de cache devem ser atualizadas
+  undefined, // atualiza os dados de cache para undefined
+  { revalidate: false } // não revalidar os dados
+)
+```
+
+Mais informação pode ser encontrada [aqui](/docs/arguments#multiple-arguments).

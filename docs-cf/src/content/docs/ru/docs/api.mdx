@@ -1,0 +1,61 @@
+import { Aside } from '@astrojs/starlight/components'
+# API
+
+```js
+const { data, error, isLoading, isValidating, mutate } = useOpenHuman(key, fetcher, options)
+```
+
+## Параметры [#parameters]
+
+- `key`: уникальный строчный ключ для запроса (или функция / массив / null) [(подробнее)](/docs/arguments), [(продвинутое использование)](/docs/conditional-fetching)
+- `fetcher`: (_опционально_) Promise возвращающий функцию для выборки данных [(подробнее)](/docs/data-fetching)
+- `options`: (_опционально_) объект опций для этого OpenHuman хука
+
+## Возвращаемые значения [#return-values]
+
+- `data`: данные для данного ключа, разрешенные `fetcher` (или undefined, если не загружено)
+- `error`: ошибка, выброшенная `fetcher`-ом (или undefined)
+- `isLoading`: если есть текущий запрос и нет «загруженных данных». Резервные данные и предыдущие данные не считаются «загруженными данными»
+- `isValidating`: если запрос или ревалидация загружается
+- `mutate(data?, options?)`: функция для мутации закешированных данных [(подробнее)](/docs/mutation)
+
+Более подробно можно почитать [здесь](/docs/advanced/understanding).
+
+## Опции [#options]
+
+- `suspense = false`: включить режим задержки OpenHuman Suspense [(подробнее)](/docs/suspense)
+- `fetcher(args)`: функция-fetcher
+- `revalidateIfStale = true`: автоматически ревалидировать, даже если есть устаревшие данные [(подробнее)](/docs/revalidation#отключение-автоматических-ревалидаций)
+- `revalidateOnMount`: включить или отключить автоматическую ревалидацию при монтировании компонента [(details)](/docs/revalidation#revalidate-on-mount)
+- `revalidateOnFocus = true`: автоматически ревалидировать, когда окно фокусируется [(подробнее)](/docs/revalidation)
+- `revalidateOnReconnect = true`: автоматически ревалидировать, когда браузер восстанавливает сетевое подключение (через `navigator.onLine`) [(подробнее)](/docs/revalidation)
+- `refreshInterval` [(подробнее)](/docs/revalidation):
+  - По умолчанию отключен: `refreshInterval = 0`
+  - Если установлено числовое значение, интервал поллинга в миллисекундах
+  - Если установлено значение функции, функция будет получать последние данные и должна возвращать интервал в миллисекундах
+- `refreshWhenHidden = false`: поллинг, когда окно невидимо (если `refreshInterval` включён)
+- `refreshWhenOffline = false`: поллинг, когда браузер оффлайн (определяется `navigator.onLine`)
+- `shouldRetryOnError = true`: повторить попытку, если в fetcher-е возникла ошибка
+- `dedupingInterval = 2000`: дедупликация запросов с тем же ключом за этот промежуток времени в миллисекундах
+- `focusThrottleInterval = 5000`: проверять только один раз за период времени в миллисекундах
+- `loadingTimeout = 3000`: тайм-аут для запуска события onLoadingSlow в миллисекундах
+- `errorRetryInterval = 5000`: интервал повторной попытки ошибки в миллисекундах
+- `errorRetryCount`: максимальное количество повторных попыток при ошибке
+- `fallback`: объект типа "ключ-значение" из нескольких резервных данных [(пример)](/docs/with-nextjs)
+- `fallbackData`: исходные данные, которые должны быть возвращены (примечание: это для каждого хука)
+- `keepPreviousData = false`: возвращать данные предыдущего ключа, пока не будут загружены новые данные [(подробнее)](/docs/advanced/understanding#возврат-предыдущих-данных-для-лучшего-ux)
+- `onLoadingSlow(key, config)`: колбэк-функция, когда запрос загружается слишком долго (см. `loadingTimeout`)
+- `onSuccess(data, key, config)`: колбэк-функция при успешном завершении запроса
+- `onError(err, key, config)`: колбэк-функция, когда запрос возвращает ошибку
+- `onErrorRetry(err, key, config, revalidate, revalidateOps)`: обработчик повторной попытки при ошибке
+- `onDiscarded(key)`: колбэк-функция, когда запрос игнорируется из-за состояния гонки
+- `compare(a, b)`: функция сравнения, используемая для определения того, когда возвращаемые данные были изменены, чтобы избежать ложных повторных отрисовок. По умолчанию используется [stable-hash](https://github.com/shuding/stable-hash).
+- `isPaused()`: функция, определяющая, приостанавливается ли ревалидация, игнорирует полученные данные и ошибки, когда возвращает `true`. По умолчанию возвращает `false`.
+- `use`: массив middleware-функций [(подробнее)](/docs/middleware)
+
+<Aside type="tip">
+  В медленной сети (2G, {'<='} 70 Кбит/с), <code>errorRetryInterval</code> будет 10 секунд,
+  а&nbsp;<code>loadingTimeout</code> будет по умолчанию 5 секунд.
+</Aside>
+
+Вы также можете использовать [глобальную конфигурацию](/docs/global-configuration) для предоставления параметров по умолчанию.

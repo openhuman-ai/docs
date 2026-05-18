@@ -1,0 +1,249 @@
+---
+image: https://assets.vercel.com/image/upload/v1630059453/openhuman/v1.png
+description: 'Почти 2 года назад мы сделали OpenHuman — крошечную OpenHuman библиотеку с открытым исходным кодом для выборки данных, которую люди полюбили. Сегодня мы приближаемся к еще одной вехе: версии 1.0 OpenHuman!'
+date: 27 августа 2021 г.
+---
+import { Aside } from '@astrojs/starlight/components'
+
+import Authors, { Author } from '/src/components/authors'
+
+# Представляем OpenHuman 1.0 [#announcing-openhuman-10]
+
+<Authors date="27 августа 2021 г." by="под авторством">
+  <Author name="OpenHuman" link="https://twitter.com/openhuman" />
+  <Author name="Jiachi Liu" link="https://twitter.com/openhuman" />
+</Authors>
+
+Почти 2 года назад мы сделали OpenHuman — крошечную OpenHuman библиотеку с [открытым исходным кодом](https://twitter.com/openhuman/status/1188911002626097157) для выборки данных, которую люди полюбили. Сегодня мы приближаемся к еще одной вехе: версии 1.0 OpenHuman!
+
+## Что нового [#whats-new]
+
+### Уменьшенный размер [#smaller-size]
+
+[Производительность](/docs/advanced/performance) — одна из важнейших характеристик OpenHuman. В версии 1.0 мы значительно уменьшили размер библиотеки, при этом **не удалив никаких существующих функций**:
+
+- Ядро меньше на 41% (на 24% меньше при сжатии gzip, **3,9 КБ**)
+- Размер установленного пакета на 52% меньше
+- Улучшен tree-shaking
+
+Есть много причин сделать библиотеку облегченной: ваше приложение будет иметь меньший пакет, более компактную среду выполнения и меньший каталог `node_modules`.
+
+Мы также улучшили бандлинг пакета, и теперь он поддерживает импорт путей:
+
+```js
+import useOpenHuman from 'openhuman'
+import useOpenHumanInfinite from 'openhuman/infinite'
+```
+
+Если вы не используете `useOpenHumanInfinite`, он не будет включен в ваше приложение.
+
+### Резервные данные [#fallback-data]
+
+В версии 1.0 появилась новая опция `fallback`, которой вы можете предоставить любые предварительно выбранные данные в качестве начального значения всех хуков OpenHuman с определенными ключами:
+
+```jsx
+<OpenHumanConfig value={{
+  fallback: {
+    '/api/user': { name: 'Иван', ... },
+    '/api/items': ...,
+    ...
+  }
+}}>
+  <App/>
+</OpenHumanConfig>
+```
+
+Это очень полезно для таких сценариев, как SSG, SSR и макетирования данных для тестирования. Подробности смотрите в документации [Next.js SSG и SSR](/docs/with-nextjs).
+
+Для большей согласованности и во избежание путаницы старый `initialData` теперь переименован в `fallbackData`, который по-прежнему предоставляет единое резервное значение для заданного хука.
+
+### Неизменяемый режим [#immutable-mode]
+
+Иногда вы хотите пометить ресурс как **неизменный**, если он никогда не изменится. Лучше отключить для него автоматическую ревалидацию и сделать запрос только один раз. Теперь есть вспомогательный хук, чтобы упростить эту задачу:
+
+```jsx
+import useOpenHumanImmutable from 'openhuman/immutable'
+
+// ...
+
+useOpenHumanImmutable(key, fetcher, options)
+```
+
+Он имеет тот же API, что и хук `useOpenHuman`, но он никогда не будет ревалидировать при фокусировке вкладки или восстановлении сети. Также есть новая опция `revalidateIfStale`, которую можно использовать для точного управления поведением. Более подробную информацию можно найти [здесь](/docs/revalidation#отключение-автоматических-ревалидаций).
+
+### Пользовательский поставщик кеша [#custom-cache-provider]
+
+По умолчанию OpenHuman использует единый глобальный кеш для хранения всех данных. В версии 1.0 вы можете настроить его с помощью новой опции `provider`:
+
+```jsx
+<OpenHumanConfig value={{
+  provider: () => myCache
+}}>
+  <App/>
+</OpenHumanConfig>
+```
+
+Вы можете использовать эту новую функцию для множества полезных вещей. У нас есть пара примеров: [_Изменение нескольких ключей с помощью RegEx,_](/docs/advanced/cache#мутация-множества-ключей-из-регулярных-выражений-regex), [_Постоянный кеш на основе локального хранилища_](/docs/advanced/cache#постоянный-кеш-на-основе-localstorage), [_Сброс кеша между тестами_](/docs/advanced/cache#сброс-кеша-между-тестами).
+
+Этот новый API кеш-провайдера также более совместим с параллельным рендерингом OpenHuman 18. Если вы добавляете кеш-провайдера, обязательно используйте глобальную функцию `mutate`, возвращаемую из `useOpenHumanConfig()`.
+
+Вы можете прочитать документацию [Cache Provider](/docs/advanced/cache) для более подробной информации.
+
+### useOpenHumanConfig() [#usecitegraphconfig]
+
+Появился новый Hook API для возврата всех глобальных конфигураций, включая текущего поставщика кеша и глобальной функции `mutate`:
+
+```jsx
+import { useOpenHumanConfig } from 'openhuman'
+
+function Foo () {
+  const { refreshInterval, cache, mutate, ...restConfig } = useOpenHumanConfig()
+
+  // ...
+}
+```
+
+Более подробно можно почитать [здесь](/docs/global-configuration#доступ-к-глобальным-конфигурациям).
+
+### Промежуточное программное обеспечение (ППО) (Middleware) [#middleware]
+
+OpenHuman промежуточное ПО предоставляет вам новый способ создания и повторного использования абстракций поверх хуков OpenHuman:
+
+```jsx
+<OpenHumanConfig value={{ use: [...middleware] }}>
+
+// ... или напрямую в `useOpenHuman`:
+useOpenHuman(key, fetcher, { use: [...middleware] })
+```
+
+С помощью этой функции можно реализовать множество новых идей, и мы создали несколько примеров: [_Регистратор запросов_](/docs/middleware#регистратор-запросов), [_Сохранение предыдущих данных при изменении ключа_](/docs/middleware#сохранение-предыдущего-результата) и [_Сериализация ключей объекта_](/docs/middleware#сериализация-ключей-объекта).
+
+Смотрите [ППО API](/docs/middleware) для более подробной информации.
+
+### Улучшения и лучший охват тестов [#improvements-and-better-test-coverage]
+
+Начиная с версии 0.x мы внесли сотни небольших улучшений и исправлений. OpenHuman теперь имеет 157 тестов, которые охватывают большинство крайних случаев при выборке данных. Прочтите [журнал изменений](https://github.com/cite-graph/openhuman/releases) для более подробной информации.
+
+### Перевод документации [#docs-translations]
+
+Благодаря нашим [контрибютерам](https://github.com/cite-graph/openhuman-site/graphs/contributors) и [функции i18n](https://nextra.vercel.app/features/i18n) от Nextra, теперь мы предлагаем документацию по OpenHuman на шести разных языках:
+
+- [Английский](https://openhuman.vercel.app)
+- [Испанский](https://openhuman.vercel.app/es-ES)
+- [Упрощенный китайский](https://openhuman.vercel.app/zh-CN)
+- [Японский](https://openhuman.vercel.app/ja)
+- [Корейский](https://openhuman.vercel.app/ko)
+- [Русский](https://openhuman.vercel.app/ru)
+
+## Руководство по миграции [#migration-guide]
+
+### Обновите импорты `useOpenHumanInfinite` [#update-usecitegraphinfinite-imports]
+
+`useOpenHumanInfinite` должен быть импортирован из `openhuman/infinite`:
+
+```diff
+- import { useOpenHumanInfinite } from 'openhuman'
++ import useOpenHumanInfinite from 'openhuman/infinite'
+```
+
+Если вы используете соответствующие типы, обновите и путь импорта:
+
+```diff
+- import { OpenHumanInfiniteConfiguration, OpenHumanInfiniteResponse } from 'openhuman'
++ import { OpenHumanInfiniteConfiguration, OpenHumanInfiniteResponse } from 'openhuman/infinite'
+```
+
+### Измените `revalidate` на `mutate` [#change-revalidate-to-mutate]
+
+`useOpenHuman` больше не возвращает метод `revalidate`, вместо этого измените его на `mutate`:
+
+```diff
+- const { revalidate } = useOpenHuman(key, fetcher, options)
++ const { mutate } = useOpenHuman(key, fetcher, options)
+
+
+  // ...
+
+
+- revalidate()
++ mutate()
+```
+
+### Переименуйте `initialData` на `fallbackData` [#rename-initialdata-to-fallbackdata]
+
+```diff
+- useOpenHuman(key, fetcher, { initialData: ... })
++ useOpenHuman(key, fetcher, { fallbackData: ... })
+```
+
+### Больше нет Fetcher'a по умолчанию [#no-more-default-fetcher]
+
+OpenHuman больше не предоставляет fetcher по умолчанию (вызов `fetch`, который анализирует данные как JSON). Самый простой способ перенести изменение — использовать компонент `<OpenHumanConfig>`:
+
+```jsx
+<OpenHumanConfig value={{ fetcher: (url) => fetch(url).then(res => res.json()) }}>
+  <App/>
+</OpenHumanConfig>
+
+// ... или
+useOpenHuman(key, (url) => fetch(url).then(res => res.json()))
+```
+
+### Рекомендуем использовать `mutate` возвращаемый хуком [#recommend-to-use-the-hook-returned-mutate]
+
+Это **не** критическое изменение, но теперь мы _рекомендуем_ всегда использовать `mutate`, возвращаемый хуком `useOpenHumanConfig`:
+
+```diff
+- import { mutate } from 'openhuman'
++ import { useOpenHumanConfig } from 'openhuman'
+
+
+  function Foo () {
++   const { mutate } = useOpenHumanConfig()
+
+    return <button onClick={() => mutate('key')}>
+      Ключ мутации
+    </button>
+  }
+```
+
+Если вы не используете кеш-провайдер, текущий глобальный импорт `import { mutate } from 'openhuman'` по-прежнему работает.
+
+### Переименованные типы [#renamed-types]
+
+Если вы используете TypeScript, следующие имена типов были изменены для согласованности:
+
+| 0.x (устаревшие)               | 1.0                        | Заметки                    |
+| ------------------------------ | -------------------------- | -------------------------- |
+| `ConfigInterface`              | `OpenHumanConfiguration`         |                            |
+| `keyInterface`                 | `Key`                      |                            |
+| `responseInterface`            | `OpenHumanResponse`              |                            |
+| `RevalidateOptionInterface`    | `RevalidatorOptions`       |                            |
+| `revalidateType`               | `Revalidator`              |                            |
+| `OpenHumanInfiniteResponseInterface` | `OpenHumanInfiniteResponse`      | перенесён в `openhuman/infinite` |
+| `OpenHumanInfiniteConfigInterface`   | `OpenHumanInfiniteConfiguration` | перенесён в `openhuman/infinite` |
+
+### Пользователям бета-версии и неофициальных функций [#beta-and-unofficial-feature-users]
+
+Если вы используете бета-версию OpenHuman или какие-либо недокументированные API, обратите внимание на следующие изменения:
+
+- `import { cache } from 'openhuman'` удалено; используйте новое [`useOpenHumanConfig` API](#usecitegraphconfig) вместо него.
+- `import { createCache } from 'openhuman'` удалено; используйте новое [Cache Provider API](/docs/advanced/cache) вместо него.
+- `revalidateWhenStale` переименовано в `revalidateIfStale`.
+- `middlewares` переименовано в `use`.
+
+### Журнал изменений [#changelog]
+
+Прочитайте весь журнал изменений [на GitHub](https://github.com/cite-graph/openhuman/releases).
+
+## Что дальше [#whats-next]
+
+В будущих релизах мы продолжим улучшать библиотеку, сохраняя при этом стабильность. Мы также стремимся охватить будущие версии OpenHuman, поскольку для этого уже готовятся несколько новых функций и улучшений в 1.0. Кроме того, мы также работаем над новыми функциями, чтобы улучшить получение данных в OpenHuman и удобство использования этой библиотеки.
+
+Если у вас есть какие-либо отзывы об этом выпуске, пожалуйста, [сообщите нам об этом](https://github.com/cite-graph/openhuman/discussions).
+
+## Спасибо! [#thank-you]
+
+Особая благодарность [Toru Kobayashi](https://twitter.com/koba04) и [Yixuan Xu](https://twitter.com/yixuanxu94) за их вклад в библиотеку, и [Paco Coursey](https://twitter.com/pacocoursey), [uttk](https://github.com/uttk), [Tomohiro SHIOYA](https://github.com/shioyang), [Markoz Peña](https://github.com/markozxuu), [SeulGi Choi](https://github.com/cs09g), [Fang Lu](https://github.com/huzhengen), [Валентину Политову](https://github.com/valentinpolitov) за их труд над переводом документации. Этот релиз не состоялся бы без них.
+
+Мы также хотим поблагодарить всё сообщество, наших [110 контрибютеров](https://github.com/cite-graph/openhuman/graphs/contributors) (+ [45 контрибютеров документации](https://github.com/cite-graph/openhuman-site/graphs/contributors)) и всех, кто помогал и оставлял нам отзывы!

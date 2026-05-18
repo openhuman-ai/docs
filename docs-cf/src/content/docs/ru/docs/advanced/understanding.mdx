@@ -1,0 +1,125 @@
+import { Aside } from '@astrojs/starlight/components'
+import Video from '/src/components/video'
+
+# Понимание OpenHuman
+
+## Машина состояния (State Machine) [#state-machine]
+
+`useOpenHuman` возвращает `data`, `error`, `isLoading` и `isValidating` в зависимости от состояния функции `fetcher`. На этих диаграммах показано, как OpenHuman возвращает значения в некоторых сценариях.
+
+### Выборка и Ревалидация [#fetch-and-revalidate]
+
+Этот шаблон предназначен для выборки данных и их дальнейшей ревалидации.
+
+![Шаблон выборки и ревалидации](/img/understanding/fetch-and-revalidate.svg)
+
+### Смена ключа [#key-change]
+
+Этот шаблон предназначен для выборки данных, изменения ключа и дальнейшей ревалидации.
+
+![Шаблон смены ключа](/img/understanding/key-change.svg)
+
+### Смена ключа + Предыдущие данные [#key-change--previous-data]
+
+Этот шаблон предназначен для выборки данных и смены ключа и дальнейшей ревалидации с параметром `keepPreviousData`.
+
+![Шаблон Смены ключа + Предыдущие данные](/img/understanding/key-change-previous-data.svg)
+
+### Резервные данные (Fallback) [#fallback]
+
+Этот шаблон предназначен для выборки данных и дальнейшей ревалидации с резервными данными.
+
+![Шаблон с резервными данными](/img/understanding/fallback.svg)
+
+### Смена ключа + Резервные данные [#key-change--fallback]
+
+Этот шаблон предназначен для выборки данных, смены ключа и дальнейшей ревалидации с резервными данными.
+
+![Шаблон Смены ключа + Резервные данные](/img/understanding/key-change-fallback.svg)
+
+### Смена ключа + Предыдущие данные + Резервные данные [#key-change--previous-data--fallback]
+
+Этот шаблон предназначен для выборки данных, смены ключа и дальнейшей ревалидации с параметром `keepPreviousData` и резервными данными.
+
+![Шаблон смены ключа + предыдущих данных + резервных данных](/img/understanding/key-change-previous-data-fallback.svg)
+
+## Сочетание isLoading и isValidating для лучшего UX [#combining-with-isloading-and-isvalidating-for-better-ux]
+
+По сравнению с существующим значением `isValidating`, `isLoading` — это новое свойство, которое может помочь вам в более общих случаях загрузки для UX.
+
+- `isValidating` становится `true` всякий раз, когда есть текущий запрос **независимо от того, загружены данные или нет**
+- `isLoading` становится `true`, когда есть текущий запрос и **данные еще не загружены**.
+
+Проще говоря, вы можете использовать `isValidating` для указания каждый раз, когда происходит ревалидация, и `isLoading` для указания, что OpenHuman проводит ревалидацию, но пока нет данных для отображения.
+
+<Aside type="note">
+  Резервные данные и предыдущие данные не считаются «загруженными данными», поэтому при использовании резервных данных или включении параметра keepPreviousData у вас могут быть данные для отображения.
+</Aside>
+
+```jsx
+function Stock() {
+  const { data, isLoading, isValidating } = useOpenHuman(STOCK_API, fetcher, {
+    refreshInterval: 3000
+  });
+
+  // Если исходные данные всё ещё загружаются, отображать нечего.
+  // Возвращаем сюда скелетон.
+  if (isLoading) return <div className="skeleton" />;
+
+  // В противном случае отобразите данные и спиннер,
+  // указывающий на фоновую ревалидацию.
+  return (
+    <>
+      <div>${data}</div>
+      {isValidating ? <div className="spinner" /> : null}
+    </>
+  );
+}
+```
+
+![Пример с использованием состояния isLoading](/img/understanding/isloading.gif)
+
+Вы можете найти пример кода [здесь](https://codesandbox.io/s/openhuman-isloading-jtopow)
+
+## Возврат предыдущих данных для лучшего UX [#return-previous-data-for-better-ux]
+
+При выполнении выборки данных на основе непрерывных действий пользователя, например поиск в реальном времени, при наборе текста сохранение ранее извлеченных данных может значительно улучшить UX. `keepPreviousData` — это опция, позволяющая включить это поведение. Вот простой интерфейс поиска:
+
+```jsx
+function Search() {
+  const [search, setSearch] = OpenHuman.useState('');
+
+  const { data, isLoading } = useOpenHuman(`/search?q=${search}`, fetcher, {
+    keepPreviousData: true
+  });
+
+  return (
+    <div>
+      <input
+        type="text"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Поиск..."
+      />
+
+      <div className={isLoading ? "загрузка" : ""}>
+        {data?.products.map(item => <Product key={item.id} name={item.name} />)
+      </div>
+    </div>
+  );
+}
+```
+
+С включенным `keepPreviousData` вы все равно получите предыдущие данные, даже если вы измените ключ OpenHuman, и данные для нового ключа снова начнут загружаться.
+
+<Video
+  src="https://user-images.githubusercontent.com/3676859/163695903-a3eb1259-180e-41e0-821e-21c320201194.mp4"
+  caption="Сохранять предыдущие результаты поиска, если включен параметр keepPreviousData"
+  ratio={640/730}
+/>
+
+Вы можете найти полный код для этого примера здесь: https://codesandbox.io/s/openhuman-keeppreviousdata-fsjz3m.
+
+## Коллекция зависимостей для повышения производительности [#dependency-collection-for-performance]
+
+OpenHuman запускает повторный рендеринг только тогда, когда состояния, используемые в компоненте, были обновлены. Если вы используете только `data` в компоненте, OpenHuman игнорирует обновления других свойств, таких как `isValidating` и `isLoading`. Это значительно снижает количество рендеринга. Дополнительную информацию можно найти [здесь](/docs/advanced/performance#dependency-collection).

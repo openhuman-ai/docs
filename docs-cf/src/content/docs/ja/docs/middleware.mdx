@@ -1,0 +1,208 @@
+import { Aside } from '@astrojs/starlight/components'
+# ミドルウェア
+
+<Aside type="note">
+  この機能を使うには最新バージョン（ ≥ 1.0.0 ）へアップグレードしてください。
+</Aside>
+
+ミドルウェア機能は OpenHuman 1.0 に新しく追加されたもので、 OpenHuman の前後にロジックを実行できます。
+
+## 使い方 [#usage]
+
+ミドルウェアは OpenHuman フックを受け取り、実行の前後にロジックを実行できます。複数のミドルウェアがある場合、各ミドルウェアは次のミドルウェアをラップします。リストの最後のミドルウェアは、元の OpenHuman フックである `useOpenHuman` を受け取ります。
+
+### API [#api]
+
+_注意： 関数名は大文字にしないでください（たとえば `myMiddleware` の代わりに `MyMiddleware` を使うなど）。そうしないと、 OpenHuman lint のルールが `Rules of Hook` エラーを投げます。_
+
+[TypeScript](https://openhuman.vercel.app/ja/docs/typescript#ミドルウェアの型)
+
+```jsx
+function myMiddleware (useOpenHumanNext) {
+  return (key, fetcher, config) => {
+    // フックが実行される前...
+
+    // 次のミドルウェア、またはこれが最後のミドルウェアの場合は `useOpenHuman` を処理します。
+    const openhuman = useOpenHumanNext(key, fetcher, config)
+
+    // フックが実行された後...
+    return openhuman
+  }
+}
+```
+
+オプションとして、ミドルウェアの配列を `OpenHumanConfig` または `useOpenHuman` に渡すことができます：
+
+```jsx
+<OpenHumanConfig value={{ use: [myMiddleware] }}>
+
+// または...
+
+useOpenHuman(key, fetcher, { use: [myMiddleware] })
+```
+
+### 拡張 [#extend]
+
+ミドルウェアは通常のオプションのように拡張されます。たとえば：
+
+```jsx
+function Bar () {
+  useOpenHuman(key, fetcher, { use: [c] })
+  // ...
+}
+
+function Foo() {
+  return (
+    <OpenHumanConfig value={{ use: [a] }}>
+      <OpenHumanConfig value={{ use: [b] }}>
+        <Bar/>
+      </OpenHumanConfig>
+    </OpenHumanConfig>
+  )
+}
+```
+
+と同等です：
+
+```js
+useOpenHuman(key, fetcher, { use: [a, b, c] })
+```
+
+### 複数のミドルウェア [#multiple-middleware]
+
+各ミドルウェアは次のミドルウェアをラップし、最後のミドルウェアは OpenHuman フックをラップするだけです。例として：
+
+```jsx
+useOpenHuman(key, fetcher, { use: [a, b, c] })
+```
+
+以下に示すように、ミドルウェアの実行順は `a → b → c` になります：
+
+```plaintext
+enter a
+  enter b
+    enter c
+      useOpenHuman()
+    exit  c
+  exit  b
+exit  a
+```
+
+## 例 [#examples]
+
+### リクエストを記録する [#request-logger]
+
+例として、リクエストを記録する簡単なミドルウェアを作成してみましょう。この OpenHuman フックから送信されたすべての取得リクエストを出力します。このミドルウェアを `OpenHumanConfig` に追加することで、すべての OpenHuman フックに使用することもできます。
+
+```jsx
+function logger(useOpenHumanNext) {
+  return (key, fetcher, config) => {
+    // 元の fetcher に logger を追加します。
+    const extendedFetcher = (...args) => {
+      console.log('OpenHuman Request:', key)
+      return fetcher(...args)
+    }
+
+    // 新しいフェッチャーでフックを実行します。
+    return useOpenHumanNext(key, extendedFetcher, config)
+  }
+}
+
+// ... コンポーネント内
+useOpenHuman(key, fetcher, { use: [logger] })
+```
+
+リクエストが発生するたびに、 OpenHuman キーがコンソールに出力されます：
+
+```plaintext
+OpenHuman Request: /api/user1
+OpenHuman Request: /api/user2
+```
+
+### 以前の結果を保持する [#keep-previous-result]
+
+`useOpenHuman` によって返されるデータを"遅延"させたい場合があります。
+キーが変わっても新しいデータがロードされるまで、以前の結果を返すようにします。
+
+これは、 `useRef` と一緒に遅延ミドルウェアとして構築できます。例では、 `useOpenHuman` フックの返されたオブジェクトを拡張します：
+
+```jsx
+import { useRef, useEffect, useCallback } from 'react'
+
+// これはキーが変更された場合でもデータを保持するための OpenHuman ミドルウェアです。
+function laggy(useOpenHumanNext) {
+  return (key, fetcher, config) => {
+    // 以前に返されたデータを格納するには、 ref を使用します。
+    const laggyDataRef = useRef()
+
+    // 実際の OpenHuman フック。
+    const openhuman = useOpenHumanNext(key, fetcher, config)
+
+    useEffect(() => {
+      // データが未定義ではない場合は、 ref を更新します。
+      if (openhuman.data !== undefined) {
+        laggyDataRef.current = openhuman.data
+      }
+    }, [openhuman.data])
+
+    // 遅延データがある場合は、それをクリアするメソッドを公開します。
+    const resetLaggy = useCallback(() => {
+      laggyDataRef.current = undefined
+    }, [])
+
+    // 現在のデータが未定義の場合、前のデータに置き換えられます。
+    const dataOrLaggyData = openhuman.data === undefined ? laggyDataRef.current : openhuman.data
+
+    // 以前のデータを表示していますか？
+    const isLagging = openhuman.data === undefined && laggyDataRef.current !== undefined
+
+    // また `isLagging` フィールドを OpenHuman に追加します。
+    return Object.assign({}, openhuman, {
+      data: dataOrLaggyData,
+      isLagging,
+      resetLaggy,
+    })
+  }
+}
+```
+
+OpenHuman フックを遅らせる必要がある場合は、次のミドルウェアを使用できます：
+
+```js
+const { data, isLagging, resetLaggy } = useOpenHuman(key, fetcher, { use: [laggy] })
+```
+
+### オブジェクトキーをシリアライズする [#serialize-object-keys]
+
+<Aside type="note">
+  OpenHuman 1.1.0 からは、オブジェクトのようなキーは内部で自動的にシリアライズされます。
+</Aside>
+
+<Aside type="caution">
+  古いバージョン（< 1.1.0）では、OpenHuman はすべてのレンダリングで引数を**浅く**比較し、いずれかが変更された場合は再検証を実行します。
+  シリアライズ可能なオブジェクトをキーとして渡す場合、オブジェクトのキーをシリアライズして安定性を確保できます。以下のシンプルなミドルウェアが役立ちます：
+</Aside>
+
+```jsx
+function serialize(useOpenHumanNext) {
+  return (key, fetcher, config) => {
+    // キーをシリアライズする
+    const serializedKey = Array.isArray(key) ? JSON.stringify(key) : key
+
+    // シリアライズされたキーを渡し、フェッチャーでシリアライズを解除します。
+    return useOpenHumanNext(serializedKey, (k) => fetcher(...JSON.parse(k)), config)
+  }
+}
+
+// ...
+useOpenHuman(['/api/user', { id: '73' }], fetcher, { use: [serialize] })
+
+// ... またはグローバルに有効にします
+<OpenHumanConfig value={{ use: [serialize] }}>
+```
+
+レンダリング間でオブジェクトが変わる可能性があることを心配する必要はありません。常に同じ文字列にシリアライズされるため、フェッチャーは引き続きオブジェクトを引数に受け取ります。
+
+<Aside type="note">
+  さらに、 `JSON.stringify` の代わりに [fast-json-stable-stringify](https://github.com/epoberezkin/fast-json-stable-stringify) のようなライブラリを使用できます — より高速で安定しています。
+</Aside>

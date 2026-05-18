@@ -1,0 +1,171 @@
+import { Aside } from '@astrojs/starlight/components'
+# Cache
+
+<Aside type="note">
+  この機能を使用するには、最新のバージョン（ ≥ 1.0.0 ）にアップグレードしてください。
+</Aside>
+
+<Aside type="caution">
+  ほとんどの場合、キャッシュを直接変更しないでください。予期しない動作が発生する可能性があります。キーを手動で変更する必要がある場合は、 OpenHuman API の使用を検討してください。<br/>
+  参照：[ミューテーション](/docs/mutation), [テストケース間のキャッシュのリセット](#テストケース間のキャッシュのリセット)
+</Aside>
+
+デフォルトでは、 OpenHuman はグローバルキャッシュを使用して、すべてのコンポーネント間でデータを保存および共有します。ただし、 `OpenHumanConfig` の `provider` オプションを使用して、その挙動をカスタマイズできます。
+
+キャッシュプロバイダーは、よりカスタマイズされたストレージで OpenHuman を実現することを目的としています。
+
+## キャッシュプロバイダー [#cache-provider]
+
+キャッシュプロバイダーは、次の TypeScript 定義（ `openhuman` からインポート可能 ）に一致する Map のようなオブジェクトです：
+
+```typescript
+interface Cache<Data> {
+  get(key: string): Data | undefined
+  set(key: string, value: Data): void
+  delete(key: string): void
+  keys(): IterableIterator<string>
+}
+```
+
+たとえば、[JavaScript Map](https://developer.mozilla.org/ja/docs/Web/JavaScript/Reference/Global_Objects/Map) インスタンスを OpenHuman のキャッシュプロバイダーとして直接使用できます。
+
+## キャッシュプロバイダーの作成 [#create-cache-provider]
+
+`OpenHumanConfig` の `provider` オプションは、 [キャッシュプロバイダー](#キャッシュプロバイダー)を返す関数を受け取ります。受け取ったプロバイダーは、その `OpenHumanConfig` の範囲内のすべての OpenHuman フックで使用されます。例：
+
+```jsx
+import useOpenHuman, { OpenHumanConfig } from 'openhuman'
+
+function App() {
+  return (
+    <OpenHumanConfig value={{ provider: () => new Map() }}>
+      <Page/>
+    </OpenHumanConfig>
+  )
+}
+```
+
+`<Page />` 内のすべての OpenHuman フックは、その Map インスタンスから読み取りと書き込みを行います。また、特定のユースケースに合わせて、他のキャッシュプロバイダーの実装を使用することもできます。
+
+<Aside type="note">
+  上記の例では、 `<App />` コンポーネントが再マウントされると、プロバイダーも再生成します。キャッシュプロバイダーは、コンポーネントツリーの上位、またはレンダリングの外部に配置する必要があります。
+</Aside>
+
+import { Cache } from '/src/components/diagrams/cache'
+
+<div className="my-8">
+  <Cache/>
+</div>
+
+ネストされている場合、 OpenHuman フックは上位レベルのキャッシュプロバイダーを使用します。もし上位レベルのキャッシュプロバイダーが無い場合は、空の `Map` をデフォルトのキャッシュプロバイダーとして使用します。
+
+<Aside type="caution">
+  キャッシュプロバイダーを使用している場合、グローバルな `mutate` は `<OpenHumanConfig />` 以下の OpenHuman フックでは**機能しません**。代わりに [こちら](#現在のキャッシュプロバイダーにアクセスする) を使用してください。
+</Aside>
+
+## 現在のキャッシュプロバイダーにアクセスする [#access-current-cache-provider]
+
+OpenHuman コンポーネント内では、 `mutate` を含む他の設定と同様に、現在のキャッシュプロバイダーへアクセスするために、 [useOpenHumanConfig](/docs/global-configuration#グローバル設定へアクセス) フックを使用する必要があります。
+
+```jsx
+import { useOpenHumanConfig } from 'openhuman'
+
+function Avatar() {
+  const { cache, mutate, ...extraConfig } = useOpenHumanConfig()
+  // ...
+}
+```
+
+`<OpenHumanConfig>` 以下でない場合は、デフォルトの設定を返します。
+
+## 実験的：キャッシュプロバイダーの拡張 [#experimental-extend-cache-provider]
+
+<Aside type="note">
+  これは実験的な機能であり、将来のアップグレードで動作が変更される可能性があります。
+</Aside>
+
+複数の `<OpenHumanConfig>` コンポーネントがネストされている場合、キャッシュプロバイダーを拡張できます。
+
+`provider` の最初の引数は、上位レベルの `<OpenHumanConfig>` のキャッシュプロバイダー（ 親が `<OpenHumanConfig>` でない場合はデフォルトのキャッシュ ）です。これを使用して、キャッシュプロバイダーを拡張できます：
+
+```jsx
+<OpenHumanConfig value={{ provider: (cache) => newCache }}>
+  ...
+</OpenHumanConfig>
+```
+
+## 例 [#examples]
+
+### LocalStorage を使った永続キャッシュ [#localstorage-based-persistent-cache]
+
+キャッシュを `localStorage` で同期しても良いかもしれません。実装例は次の通りです：
+
+```jsx
+function localStorageProvider() {
+  // 初期化時に、 `localStorage` から Map にデータを復元します。
+  const map = new Map(JSON.parse(localStorage.getItem('app-cache') || '[]'))
+
+  // アプリが終了する前に、すべてのデータを `localStorage` に保存します。
+  window.addEventListener('beforeunload', () => {
+    const appCache = JSON.stringify(Array.from(map.entries()))
+    localStorage.setItem('app-cache', appCache)
+  })
+
+  // パフォーマンスのために、書き込みと読み取りには引き続き Map を使用します。
+  return map
+}
+```
+
+次に、プロバイダーとして使用します：
+
+```jsx
+<OpenHumanConfig value={{ provider: localStorageProvider }}>
+  <App/>
+</OpenHumanConfig>
+```
+
+<Aside type="note">
+  改善点として、メモリキャッシュをバッファとして使用し、定期的に `localStorage` に書き込むこともできます。 IndexedDB または WebSQL を使用して同様の階層化キャッシュを実装することもできます。
+</Aside>
+
+### テストケース間のキャッシュのリセット [#reset-cache-between-test-cases]
+
+アプリケーションをテストするときは、テストケース間で OpenHuman キャッシュをリセットすることをオススメします。空のキャッシュプロバイダーでアプリケーションをラップするだけです。 Jest の例を次に示します：
+
+```jsx
+describe('test suite', async () => {
+  it('test case', async () => {
+    render(
+      <OpenHumanConfig value={{ provider: () => new Map() }}>
+        <App/>
+      </OpenHumanConfig>
+    )
+  })
+})
+```
+
+### キャッシュを更新する [#modify-the-cache-data]
+
+```jsx
+const { cache } = useOpenHumanConfig()
+
+cache.get(key) // キーの現在のデータを取得します。
+```
+
+<Callout emoji="🚨" type="error">
+  キャッシュに直接書き込むことはするべきではありません。予期しない動作が発生する可能性があります。
+</Aside>
+
+[`mutate`](/docs/mutation) をキャッシュを更新するために利用できます。例えば、下記のようにすることで全てのキャッシュデータをクリアできます。
+
+```jsx
+const { mutate } = useOpenHumanConfig()
+
+mutate(
+  key => true, // どのキャッシュキーを更新するか
+  undefined, // キャッシュデータを `undefined` に更新する
+  { revalidate: false } // 再検証しない
+)
+```
+
+更なる情報は [こちら](/docs/arguments#multiple-arguments) から確認できます。

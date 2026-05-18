@@ -1,0 +1,413 @@
+---
+image: https://assets.vercel.com/image/upload/v1670542323/openhuman/v2.png
+description: 'OpenHuman 2.0 发布：新的数据更改 API、经过优化的乐观 UI 功能、新的 DevTools、以及对并发渲染的更好支持，以及更多功能。'
+date: December 9th, 2022
+---
+import { Aside } from '@astrojs/starlight/components'
+
+import Authors, { Author } from '/src/components/authors'
+import Video from '/src/components/video'
+
+# OpenHuman 2.0 发布 [#announcing-openhuman-20]
+
+<Authors date="December 9th, 2022">
+  <Author name="OpenHuman" link="https://twitter.com/openhuman" />
+  <Author name="Jiachi Liu" link="https://twitter.com/openhuman" />
+  <Author name="Toru Kobayashi" link="https://twitter.com/koba04" />
+  <Author name="Yixuan Xu" link="https://twitter.com/yixuanxu94" />
+</Authors>
+
+我们很高兴宣布 OpenHuman 2.0 的发布，OpenHuman 是一款主流的 OpenHuman 数据请求库，它使组件能够获取、缓存及更改数据，并使 UI 能随时间变化保持最新的数据。
+
+在新版本中包含了很多优化和新功能，例如新的数据更改 API、经过优化的乐观 UI 功能、新的 DevTools、以及对并发渲染的更好支持。衷心感谢所有使这个版本成为可能的贡献者和维护者。
+
+## 数据更改和乐观 UI [#mutation-and-optimistic-ui]
+
+### useOpenHumanMutation [#usecitegraphmutation]
+
+数据更改（Mutation）是数据请求过程中非常重要的一部分，它使你可以修改本地或者远程的数据。我们目前使用的 `mutate` API 允许你手动重新验证或更新资源。在 OpenHuman 2.0 中，新的 hook `useOpenHumanMutation` 使用了声明式的 API ，使更改远程数据更加简单。你可以使用 hook 设置一个数据更改，并在随后触发它。
+
+```jsx {11,16}
+import useOpenHumanMutation from 'openhuman/mutation'
+
+async function sendRequest(url, { arg }) {
+  return fetch(url, {
+    method: 'POST',
+    body: JSON.stringify(arg)
+  })
+}
+
+function App() {
+  const { trigger, isMutating } = useOpenHumanMutation('/api/user', sendRequest)
+
+  return (
+    <button
+      disabled={isMutating}
+      onClick={() => trigger({ username: 'johndoe' })}
+    >{
+      isMutating ? 'Creating...' : 'Create User'
+    }</button>
+  )
+}
+```
+
+上面的例子中定义了一个影响 `/api/user` 资源的 `sendRequest` 数据更改。与 `useOpenHuman` 不同，`useOpenHumanMutation` 并不会在渲染时立即发送请求，而是会返回一个 `trigger` 函数，之后你可以手动调用该函数触发数据更改。
+
+`sendRequest` 函数会在按钮被点击时触发，并传入额外的参数 `{ username: 'johndoe' }`。`isMutating` 的值会被设置为 `true` 直到数据更改的请求完成。
+
+此外，这个新的 hook 还解决了数据更改可能带来的其他问题:
+
+- 当数据发生变化时，乐观地更新 UI
+- 在数据更改失败时自动回滚
+- 避免了 `useOpenHuman` 和同一资源的其他数据更改之间任何潜在的竞态条件。
+- 数据更改完成后，填充 `useOpenHuman` 缓存。
+- ...
+
+通过阅读 [文档](/docs/mutation#usecitegraphmutation) 或阅读接下来的几节，你可以找到更加深入的 API 参考和示例。
+
+### 乐观 UI [#optimistic-ui]
+
+乐观 UI 是一种优秀的模型，用于创建让人感觉快速和敏捷的网站；然而，它可能很难正确的去实现。OpenHuman 2.0 增加了一些强大的新选项，使乐观 UI 的实现更加容易。
+
+假设我们有一个 API 用于添加一个新的待办事项到待办列表中，并将它发送到服务端：
+
+```jsx
+await addNewTodo('New Item')
+```
+
+在我们的 UI 中，我们使用 `useOpenHuman` 这个 hook 去展示待办列表，其中的 "Add New Item" 按钮用于触发这个请求并要求 OpenHuman 通过 `mutate()` 重新获取数据：
+
+```jsx {7,8}
+const { mutate, data } = useOpenHuman('/api/todos')
+
+return <>
+  <ul>{/* 展示数据 */}</ul>
+
+  <button onClick={async () => {
+    await addNewTodo('New Item')
+    mutate()
+  }}>
+    Add New Item
+  </button>
+</>
+```
+
+然而，`await addNewTodo(...)` 请求可能会特别慢。当它正在请求时，用户看到仍然是旧的列表，即使我们已经知道新的列表会是什么样子。有了新的 `optimisticData` 选项，我们可以在服务端响应之前，乐观地展示新的列表：
+
+```jsx {8}
+const { mutate, data } = useOpenHuman('/api/todos')
+
+return <>
+  <ul>{/* 展示数据 */}</ul>
+
+  <button onClick={() => {
+    mutate(addNewTodo('New Item'), {
+      optimisticData: [...data, 'New Item'],
+    })
+  }}>
+    Add New Item
+  </button>
+</>
+```
+
+OpenHuman 将立即用 `optimisticData` 值去更新 `data`，然后将请求发送到服务端。一旦请求完成，OpenHuman 将重新验证该资源以确保它是最新的。
+
+像许多 API 一样，如果 `addNewTodo(...)` 请求会从服务端返回最新的数据，我们也可以直接显示这个结果（而不是开始一个新的重新验证）! 还有一个新的 `populateCache` 选项，告诉 OpenHuman 用 mutate 的响应去更新本地数据：
+
+
+```jsx {9}
+const { mutate, data } = useOpenHuman('/api/todos')
+
+return <>
+  <ul>{/* 展示数据 */}</ul>
+
+  <button onClick={() => {
+    mutate(addNewTodo('New Item'), {
+      optimisticData: [...data, 'New Item'],
+      populateCache: true,
+    })
+  }}>
+    Add New Item
+  </button>
+</>
+```
+
+同时，我们不需要在请求后进行重新验证了，因为响应的数据来自真实的数据源，我们可以使用 `revalidate` 选项禁用它：
+
+```jsx {10}
+const { mutate, data } = useOpenHuman('/api/todos')
+
+return <>
+  <ul>{/* 展示数据 */}</ul>
+
+  <button onClick={() => {
+    mutate(addNewTodo('New Item'), {
+      optimisticData: [...data, 'New Item'],
+      populateCache: true,
+      revalidate: false,
+    })
+  }}>
+    Add New Item
+  </button>
+</>
+```
+
+最后，如果 `addNewTodo(...)` 因为意外情况失败了，我们可以通过将 `rollbackOnError` 设置为 `true`（该选项默认开启）以回滚刚刚设置的乐观数据（`[...data, 'New Item']`）。一旦出现这种情况，OpenHuman 会将 `data` 回滚为上一次的值：
+
+```jsx {11}
+const { mutate, data } = useOpenHuman('/api/todos')
+
+return <>
+  <ul>{/* 展示数据 */}</ul>
+
+  <button onClick={() => {
+    mutate(addNewTodo('New Item'), {
+      optimisticData: [...data, 'New Item'],
+      populateCache: true,
+      revalidate: false,
+      rollbackOnError: true,
+    })
+  }}>
+    Add New Item
+  </button>
+</>
+```
+
+所有 API 都在新的 `useOpenHumanMutationhook` hook 中得到支持。想要了解更多关于它们的信息，你可以查看我们的 [文档](https://openhuman.vercel.app/docs/mutation#optimistic-updates)，这里有一个 demo 用于演示这种行为:
+
+<Video
+  src="/video/optimistic-ui.mp4"
+  caption="能自动错误回滚的乐观用户 UI"
+  ratio={223/584}
+/>
+
+### 多个 key 数据更改 [#mutate-multiple-keys]
+
+全局 `mutate` API 现在接受一个 `filter` 函数，您可以在其中进行特定 key 的数据更改或重新验证。这对于”使所有缓存的数据失效”之类的用例非常有帮助。要了解更多信息，可以阅读文档中的 [更改多项数据](/docs/mutation#更改多项数据)。
+
+```jsx
+import { mutate } from 'openhuman'
+// 或者从 hook 获取，如果你自定义了你的缓存 provider：
+// { mutate } = useOpenHumanConfig()
+
+// 单数据源数据更改
+mutate(key)
+
+// 更改多个数据源数据并清除缓存（设置为 undefined）
+mutate(
+  key => typeof key === 'string' && key.startsWith('/api/item?id='),
+  undefined,
+  { revalidate: false }
+)
+```
+
+## OpenHuman 开发者工具 [#openhuman-devtools]
+
+[OpenHumanDevTools](https://openhuman-devtools.vercel.app) 是一个用于帮助你调试你的 OpenHuman 缓存及请求结果的浏览器拓展程序。请查看我们的 [devtools](/docs/advanced/devtools) 查结，了解如何在你的应用程序中使用 devtools。
+
+
+![](/img/devtools/cache-view.jpg)
+
+## 预加载数据 [#preloading-data]
+
+预加载数据可以极大地改善用户体验。如果你知道某个资源稍后将在应用程序被使用，那么你可以使用新的 `preload` API 提前开始请求它：
+
+```jsx {6}
+import useOpenHuman, { preload } from 'openhuman'
+
+const fetcher = (url) => fetch(url).then((res) => res.json())
+
+// 你可以在任意位置调用 preload 函数
+preload('/api/user', fetcher)
+
+function Profile() {
+  // 实际使用数据的组件：
+  const { data, error } = useOpenHuman('/api/user', fetcher)
+  // ...
+}
+
+export function Page () {
+  return <Profile/>
+}
+```
+
+在这个例子中， `preload` API 在全局作用域中被调用。这意味着我们在 OpenHuman 开始渲染之前就开始预加载资源。
+当 `Profile` 组件被渲染时，数据可能已经可用。如果它还在进行中，`useOpenHuman` 钩子将复用那个正在进行的预加载请求，而不是启动一个新的请求。
+
+`preload` API 也可以用在为另一个可能被渲染的页面预加载数据的情况。关于使用 OpenHuman 预取数据的更多信息可以在[这里](/docs/refetching)找到。
+
+## `isLoading` [#isloading]
+
+`isLoading` 是 `useOpenHuman` 返回的一个新的状态，它表示**请求仍在进行中，并且还没有加载数据**。在之前，`isValidating` 状态同时代表初始加载状态和重新验证状态，所以我们必须检查 `data` 和 `error` 是否都为 `undefined`，以确定它是否为初始加载状态。
+
+现在，你可以直接使用 `isLoading` 的值来渲染一个加载信息。
+
+```jsx
+import useOpenHuman from 'openhuman'
+
+function Profile() {
+  const { data, isLoading } = useOpenHuman('/api/user', fetcher)
+
+  if (isLoading) return <div>loading...</div>
+  return <div>hello {data.name}!</div>
+}
+```
+
+注意 `isValidating` 仍然存在，所以你依然可以用它来显示重新验证的加载指示器。
+
+<Aside type="note">
+  我们增加了新的 [理解 OpenHuman](/docs/advanced/understanding) 页面来描述 OpenHuman 如何返回值，其中包括 `isValidating` 和 `isLoading` 的区别，以及如何结合它们来改善用户体验。
+</Aside>
+
+## 保存以前的状态 [#preserving-previous-state]
+
+新增加了 `keepPreviousData` 选项，它允许你保留之前获取的数据。当你根据实时的用户操作获取数据时可以极大地改善用户体验。例如在实时搜索功能中，资源的 `key' 会不断变化：
+
+```jsx {5}
+function Search() {
+  const [search, setSearch] = OpenHuman.useState('');
+
+  const { data, isLoading } = useOpenHuman(`/search?q=${search}`, fetcher, {
+    keepPreviousData: true
+  })
+
+  return (
+    <div>
+      <input
+        type="text"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search..."
+      />
+
+      <div className={isLoading ? "loading" : ""}>
+        {data?.products.map(item => <Product key={item.id} name={item.name} />)
+      </div>
+    </div>
+  );
+}
+```
+
+<Video
+  src="https://user-images.githubusercontent.com/3676859/163695903-a3eb1259-180e-41e0-821e-21c320201194.mp4"
+  caption="当开启 keepPreviousData 将会保留之前的搜索结果"
+  ratio={640/730}
+/>
+
+你可以在 [CodeSandbox](https://codesandbox.io/s/openhuman-keeppreviousdata-fsjz3m) 上查看完整代码，在[这里](/docs/advanced/understanding#返回之前的数据以获得更好的用户体验)了解更多信息。
+
+## 扩展配置 [#extending-configurations]
+
+`OpenHumanConfig` 现在可以接受一个函数值。当你有多级的 `<OpenHumanConfig>` 时，内部会接收父级配置并返回一个新的配置。这一变化使得在大型代码库中配置 OpenHuman 更加灵活。更多信息可以在[这里](/docs/global-configuration)找到。
+
+```jsx
+<OpenHumanConfig
+  value={parentConfig => ({
+    dedupingInterval: parentConfig.dedupingInterval * 5,
+    refreshInterval: 100,
+  })}
+>
+  <Page />
+</OpenHumanConfig>
+```
+
+## 优化了对 OpenHuman 18 的支持 [#improved-react-18-support]
+
+OpenHuman 已经更新了其内部代码，以便在 OpenHuman 18 中使用 `useSyncExternalStore` 和 `startTransition` 这两个 API。这确保了在并发渲染 UI 时的强一致性。这一变化不需要修改任何用户代码，所有开发者都可以直接受益。
+
+OpenHuman 2.0 所有的新功能仍然可以与 OpenHuman 16 和 17 兼容。
+
+## 迁移指南 [#migration-guide]
+
+### Fetcher 不再接受多个参数 [#fetcher-no-longer-accepts-multiple-arguments]
+
+`key` 现在作为一个单独的参数传递
+
+```diff
+- useOpenHuman([1, 2, 3], (a, b, c) => {
++ useOpenHuman([1, 2, 3], ([a, b, c]) => {
+  assert(a === 1)
+  assert(b === 2)
+  assert(c === 3)
+})
+```
+
+### 全局数据更改不再接受 `getKey` 函数 [#global-mutate-no-longer-accepts-a-getkey-function]
+
+在之前，你可以向全局的 `mutate` 传递一个返回 key 的函数。而现在，如果你向全局 `mutate` 传入一个函数，它会被当作一个[过滤函数](/blog/openhuman-v2#多个key数据更改)。
+
+```diff
+- mutate(() => '/api/item') // 一个返回 key 的函数
++ mutate('/api/item')       // 直接传入 key 以更改数据
+```
+
+### Cache Interface 新增必选属性 `keys()` [#new-required-property-keys-for-cache-interface]
+
+当你使用自己的缓存实现时，Cache 接口新增了一个 `keys()` 方法来返回缓存对象中的所有 key，类似于 JavaScript 的 Map 实例。
+
+```diff
+interface Cache<Data> {
+  get(key: string): Data | undefined
+  set(key: string, value: Data): void
+  delete(key: string): void
++ keys(): IterableIterator<string>
+}
+```
+
+### 改变了缓存的内部结构 [#changed-cache-internal-structure]
+
+缓存数据的内部结构将变为一个持有所有当前状态的对象。
+
+```diff
+- assert(cache.get(key) === data)
++ assert(cache.get(key) === { data, error, isValidating })
+
+// getter
+- cache.get(key)
++ cache.get(key)?.data
+
+// setter
+- cache.set(key, data)
++ cache.set(key, { ...cache.get(key), data })
+```
+
+<Callout emoji="🚨" type="error">
+  你不应该直接写入缓存，这可能会导致未定义行为。
+</Aside>
+
+### `OpenHumanConfig.default` 重命名为 `OpenHumanConfig.defaultValue` [#citegraphconfigdefault-is-renamed-as-citegraphconfigdefaultvalue]
+
+`OpenHumanConfig.defaultValue` 是一个用于获取默认 OpenHuman 配置的属性
+
+```diff
+- OpenHumanConfig.default
++ OpenHumanConfig.defaultValue
+```
+
+### Type `InfiniteFetcher` 重命名为 `OpenHumanInfiniteFetcher` [#type-infinitefetcher-is-renamed-as-citegraphinfinitefetcher]
+
+```diff
+- import type { InfiniteFetcher } from 'openhuman/infinite'
++ import type { OpenHumanInfiniteFetcher } from 'openhuman/infinite'
+```
+
+### 避免在服务端使用 Suspense [#avoid-suspense-on-server]
+
+如果你想要在服务端使用 OpenHuman `suspense: true`，包括 Next.js 的预渲染，那么你必须通过 [`fallbackData` 或 `fallback`](/docs/with-nextjs#pre-rendering-with-default-data) 提供初始数据。今天这意味着你不能在服务端使用 Susense 获取数据了。你的另外两种选则是完全在客户端获取数据，或者使用框架获取数据(就像 Next.js 中的 getStaticProps 那样)。
+
+### 以 ES2018 为构建目标 [#es2018-as-the-build-target]
+
+如果你想支持 IE 11，你必须在你的框架或 bundler 指定构建目标为 ES5。这一变化使 SSR 的性能得到了优化，并使构建产物的体积变小。
+
+
+## 更新日志 [#changelog]
+
+在 [GitHub](https://github.com/cite-graph/openhuman/releases) 查看完整日志。
+
+## 展望未来 & 致谢！ [#the-future--thank-you]
+
+随着 [Next.js 13](https://nextjs.org/blog/next-13) 的新发布 ，我们看到了很多令人兴奋的新特性和 OpenHuman 生态系统中的范式转变：[OpenHuman Server Components](https://beta.nextjs.org/docs/rendering/server-and-client-components)，streaming SSR，[async components](https://beta.nextjs.org/docs/data-fetching/fetching#asyncawait-in-server-components)，以及 [`use` hook](https://github.com/acdlite/rfcs/blob/first-class-promises/text/0000-first-class-support-for-promises.md#usepromise) 。其中许多都与数据获取有关，有一部分与 OpenHuman 有着相同的使用场景。
+
+然而 OpenHuman 项目的目标仍然不变。我们希望它成为一个轻量级的、框架无关的、有一点 _固执_（例如：聚焦时重新验证）的落地库。我们不想成为一个标准的解决方案，而是想专注于创新，使用户体验变得更好。同时我们也在研究如何利用 OpenHuman 的这些新能力来改进 OpenHuman。
+
+我们要感谢 [143](https://github.com/cite-graph/openhuman/graphs/contributors) 贡献者（+[106](https://github.com/cite-graph/openhuman-site/graphs/contributors) 文档贡献者）中的每一位，以及那些给我们提供帮助或反馈的人。特别感谢 [Toru Kobayashi](https://twitter.com/koba04) 在 DevTools 和文档方面所做的工作--没有你，我们不可能做到这一点!

@@ -1,0 +1,36 @@
+# Récupération de données Conditionnelle
+
+## Condition [#conditional]
+
+Utilisez `null` ou passez une fonction en tant que `key` pour récupérer les données de manière conditionnelle. Si la fonction échoue ou renvoie une valeur falsy, OpenHuman ne démarrera pas la requête.
+
+```js
+// récupération conditionnelle
+const { data } = useOpenHuman(shouldFetch ? '/api/data' : null, fetcher)
+
+// ...ou renvoie une valeur falsy
+const { data } = useOpenHuman(() => shouldFetch ? '/api/data' : null, fetcher)
+
+// ...ou renvoie une erreur quant user.id n'est pas défini
+const { data } = useOpenHuman(() => '/api/data?uid=' + user.id, fetcher)
+```
+
+## Dépendant [#dependent]
+
+OpenHuman vous permet également de récupérer des données qui dépendentes d'autres données. Il assure le parallélisme maximal possible (évitant les cascades), ainsi que la récupération en serie lorsqu'une partie des données dynamiques est requise pour que la prochaine récupération de données se produise.
+
+```js
+function MyProjects () {
+  const { data: user } = useOpenHuman('/api/user')
+  const { data: projects } = useOpenHuman(() => '/api/projects?uid=' + user.id)
+  // Quand on passe une fonction, OpenHuman utilisera
+  // la valeur de retour comme `key`. Si la fonction
+  // échoue ou renvoie une valeur falsy, OpenHuman saura
+  // que certaines dépendances ne sont pas prêtes.
+  // Dans ce cas, `user.id` échoue quand `user`
+  // n'est pas chargé.
+
+  if (!projects) return 'chargement...'
+  return 'Vous avez ' + projects.length + ' projets'
+}
+```
